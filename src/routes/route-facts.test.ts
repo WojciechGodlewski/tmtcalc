@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { buildApp } from '../app.js';
 import type { HereService } from '../here/index.js';
 import type { HereRoutingResponse } from '../here/route-truck.js';
+import { HereApiError } from '../here/http-client.js';
 
 // Mock HERE service
 function createMockHereService(): HereService {
@@ -75,7 +76,8 @@ describe('POST /api/route-facts', () => {
 
       expect(response.statusCode).toBe(400);
       const body = response.json();
-      expect(body.error).toBe('Invalid request body');
+      expect(body.error.code).toBe('VALIDATION_ERROR');
+      expect(body.error.message).toBe('Invalid request body');
     });
 
     it('returns 400 for missing origin', async () => {
@@ -293,7 +295,7 @@ describe('POST /api/route-facts', () => {
   });
 
   describe('error handling', () => {
-    it('returns 500 when geocoding fails', async () => {
+    it('returns 502 when geocoding fails with upstream error', async () => {
       mockHereService.geocode = vi.fn().mockRejectedValue(new Error('Geocoding failed'));
 
       const app = buildApp({ hereService: mockHereService });
@@ -309,12 +311,13 @@ describe('POST /api/route-facts', () => {
         },
       });
 
-      expect(response.statusCode).toBe(500);
+      expect(response.statusCode).toBe(502);
       const body = response.json();
-      expect(body.error).toBe('Failed to calculate route');
+      expect(body.error.code).toBe('UPSTREAM_ERROR');
+      expect(body.error.message).toContain('Geocoding failed');
     });
 
-    it('returns 500 when routing fails', async () => {
+    it('returns 502 when routing fails with upstream error', async () => {
       mockHereService.routeTruck = vi.fn().mockRejectedValue(new Error('Routing failed'));
 
       const app = buildApp({ hereService: mockHereService });
@@ -330,14 +333,15 @@ describe('POST /api/route-facts', () => {
         },
       });
 
-      expect(response.statusCode).toBe(500);
+      expect(response.statusCode).toBe(502);
       const body = response.json();
-      expect(body.error).toBe('Failed to calculate route');
+      expect(body.error.code).toBe('UPSTREAM_ERROR');
+      expect(body.error.message).toContain('Routing failed');
     });
 
-    it('does not leak API key in error messages', async () => {
+    it('returns 502 when HERE API throws HereApiError', async () => {
       mockHereService.routeTruck = vi.fn().mockRejectedValue(
-        new Error('Request failed: apiKey=secret123&param=value')
+        new HereApiError('HERE API error: Bad Request', 400)
       );
 
       const app = buildApp({ hereService: mockHereService });
@@ -353,10 +357,61 @@ describe('POST /api/route-facts', () => {
         },
       });
 
-      expect(response.statusCode).toBe(500);
+      // Upstream errors return 502
+      expect(response.statusCode).toBe(502);
       const body = response.json();
-      expect(body.details).not.toContain('secret123');
-      expect(body.details).toContain('apiKey=***');
+      expect(body.error.code).toBe('UPSTREAM_ERROR');
+      expect(body.error.message).toContain('HERE API error');
+    });
+
+    it('does not leak API key in error messages', async () => {
+      mockHereService.routeTruck = vi.fn().mockRejectedValue(
+        new HereApiError('Request failed: apiKey=secret123&param=value', 500)
+      );
+
+      const app = buildApp({ hereService: mockHereService });
+      await app.ready();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/route-facts',
+        payload: {
+          origin: { lat: 52.52, lng: 13.405 },
+          destination: { lat: 52.2297, lng: 21.0122 },
+          vehicleProfileId: 'ftl_13_6_33ep',
+        },
+      });
+
+      expect(response.statusCode).toBe(502);
+      const body = response.json();
+      expect(body.error.message).not.toContain('secret123');
+      expect(body.error.message).toContain('apiKey=***');
+    });
+
+    it('returns JSON error response (no socket hang up) on unexpected errors', async () => {
+      mockHereService.routeTruck = vi.fn().mockRejectedValue(
+        new Error('Unexpected internal error')
+      );
+
+      const app = buildApp({ hereService: mockHereService });
+      await app.ready();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/route-facts',
+        payload: {
+          origin: { lat: 52.52, lng: 13.405 },
+          destination: { lat: 52.2297, lng: 21.0122 },
+          vehicleProfileId: 'ftl_13_6_33ep',
+        },
+      });
+
+      // Should not hang up - should return proper JSON error
+      expect(response.statusCode).toBeGreaterThanOrEqual(400);
+      const body = response.json();
+      expect(body.error).toBeDefined();
+      expect(body.error.code).toBeDefined();
+      expect(body.error.message).toBeDefined();
     });
   });
 

@@ -267,7 +267,7 @@ describe('POST /api/quote', () => {
 
       expect(response.statusCode).toBe(400);
       const body = response.json();
-      expect(body.error).toBe('No pricing model available');
+      expect(body.error.code).toBe('NO_MODEL_AVAILABLE');
     });
   });
 
@@ -300,7 +300,7 @@ describe('POST /api/quote', () => {
   });
 
   describe('error handling', () => {
-    it('returns 500 when routing fails', async () => {
+    it('returns 502 when routing fails with upstream error', async () => {
       const mockService = createMockHereService();
       mockService.routeTruck = vi.fn().mockRejectedValue(new Error('Routing failed'));
 
@@ -317,9 +317,9 @@ describe('POST /api/quote', () => {
         },
       });
 
-      expect(response.statusCode).toBe(500);
+      expect(response.statusCode).toBe(502);
       const body = response.json();
-      expect(body.error).toBe('Failed to calculate quote');
+      expect(body.error.code).toBe('UPSTREAM_ERROR');
     });
 
     it('does not leak API key in error responses', async () => {
@@ -342,7 +342,7 @@ describe('POST /api/quote', () => {
       });
 
       const body = response.json();
-      expect(body.details).not.toContain('secret123');
+      expect(body.error.message).not.toContain('secret123');
     });
   });
 });

@@ -7,6 +7,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import type { HereService } from '../here/index.js';
 import { extractRouteFactsFromHere } from '../here/extract-route-facts.js';
 import type { RouteFacts } from '../types/route-facts.js';
+import { ApiError, toApiError, type ApiErrorResponse } from '../errors.js';
 
 /**
  * Location point - either address or coordinates required
@@ -57,11 +58,6 @@ interface RouteFactsResponse {
   };
 }
 
-interface ErrorResponse {
-  error: string;
-  details?: unknown;
-}
-
 /**
  * Resolve a location point to coordinates
  */
@@ -99,19 +95,22 @@ export function createRouteFactsHandler(hereService: HereService) {
   return async function routeFactsHandler(
     request: FastifyRequest,
     reply: FastifyReply
-  ): Promise<RouteFactsResponse | ErrorResponse> {
+  ): Promise<RouteFactsResponse | ApiErrorResponse> {
     // Validate request body
     const parseResult = RouteFactsRequestSchema.safeParse(request.body);
 
     if (!parseResult.success) {
-      reply.status(400);
-      return {
-        error: 'Invalid request body',
-        details: parseResult.error.issues.map((issue) => ({
+      const validationError = new ApiError(
+        'VALIDATION_ERROR',
+        'Invalid request body',
+        400,
+        parseResult.error.issues.map((issue) => ({
           path: issue.path.join('.'),
           message: issue.message,
-        })),
-      };
+        }))
+      );
+      reply.status(400);
+      return validationError.toResponse();
     }
 
     const body = parseResult.data;
@@ -159,21 +158,13 @@ export function createRouteFactsHandler(hereService: HereService) {
         },
       };
     } catch (error) {
-      // Handle errors without leaking sensitive info
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      // Convert to standardized API error
+      const apiError = toApiError(error);
 
-      // Sanitize message to ensure no API key leaks
-      const sanitizedMessage = message
-        .replace(/apiKey=[^&\s]+/gi, 'apiKey=***')
-        .replace(/HERE_API_KEY/gi, '***');
+      request.log.error({ error: apiError.message }, 'Route facts request failed');
 
-      request.log.error({ error: sanitizedMessage }, 'Route facts request failed');
-
-      reply.status(500);
-      return {
-        error: 'Failed to calculate route',
-        details: sanitizedMessage,
-      };
+      reply.status(apiError.statusCode);
+      return apiError.toResponse();
     }
   };
 }

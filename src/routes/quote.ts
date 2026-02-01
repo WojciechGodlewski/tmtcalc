@@ -8,6 +8,7 @@ import type { HereService } from '../here/index.js';
 import { extractRouteFactsFromHere } from '../here/extract-route-facts.js';
 import { calculateQuote, type PricingResult, type QuoteOptions } from '../pricing/index.js';
 import type { RouteFacts } from '../types/route-facts.js';
+import { ApiError, toApiError, type ApiErrorResponse } from '../errors.js';
 
 /**
  * Location point - either address or coordinates required
@@ -63,11 +64,6 @@ interface QuoteResponse {
   };
 }
 
-interface ErrorResponse {
-  error: string;
-  details?: unknown;
-}
-
 /**
  * Resolve a location point to coordinates
  */
@@ -103,19 +99,22 @@ export function createQuoteHandler(hereService: HereService) {
   return async function quoteHandler(
     request: FastifyRequest,
     reply: FastifyReply
-  ): Promise<QuoteResponse | ErrorResponse> {
+  ): Promise<QuoteResponse | ApiErrorResponse> {
     // Validate request body
     const parseResult = QuoteRequestSchema.safeParse(request.body);
 
     if (!parseResult.success) {
-      reply.status(400);
-      return {
-        error: 'Invalid request body',
-        details: parseResult.error.issues.map((issue) => ({
+      const validationError = new ApiError(
+        'VALIDATION_ERROR',
+        'Invalid request body',
+        400,
+        parseResult.error.issues.map((issue) => ({
           path: issue.path.join('.'),
           message: issue.message,
-        })),
-      };
+        }))
+      );
+      reply.status(400);
+      return validationError.toResponse();
     }
 
     const body = parseResult.data;
@@ -173,24 +172,13 @@ export function createQuoteHandler(hereService: HereService) {
         },
       };
     } catch (error) {
-      // Handle errors without leaking sensitive info
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      // Convert to standardized API error
+      const apiError = toApiError(error);
 
-      // Sanitize message
-      const sanitizedMessage = message
-        .replace(/apiKey=[^&\s]+/gi, 'apiKey=***')
-        .replace(/HERE_API_KEY/gi, '***');
+      request.log.error({ error: apiError.message }, 'Quote request failed');
 
-      request.log.error({ error: sanitizedMessage }, 'Quote request failed');
-
-      // Check if it's a "no model found" error (400) vs other errors (500)
-      const isNoModelError = message.includes('No pricing model found');
-
-      reply.status(isNoModelError ? 400 : 500);
-      return {
-        error: isNoModelError ? 'No pricing model available' : 'Failed to calculate quote',
-        details: sanitizedMessage,
-      };
+      reply.status(apiError.statusCode);
+      return apiError.toResponse();
     }
   };
 }

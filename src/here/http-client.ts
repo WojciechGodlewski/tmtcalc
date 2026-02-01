@@ -29,6 +29,7 @@ export class HereApiError extends Error {
 const DEFAULT_TIMEOUT_MS = 30000;
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_BASE_BACKOFF_MS = 1000;
+const MAX_ERROR_BODY_SIZE = 10000; // Limit error body read to 10KB
 
 /**
  * Creates a HERE API HTTP client
@@ -132,6 +133,42 @@ export function createHereClient(config: HereClientConfig) {
   }
 
   /**
+   * Safely read response text with size limit to prevent memory issues
+   */
+  async function safeReadResponseText(response: Response): Promise<string> {
+    try {
+      // Check content-length header if available
+      const contentLength = response.headers.get('content-length');
+      if (contentLength && parseInt(contentLength, 10) > MAX_ERROR_BODY_SIZE) {
+        // Body too large, read only a portion
+        const reader = response.body?.getReader();
+        if (!reader) {
+          return '[Response body unavailable]';
+        }
+
+        const chunks: Uint8Array[] = [];
+        let totalSize = 0;
+
+        while (totalSize < MAX_ERROR_BODY_SIZE) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          totalSize += value.length;
+        }
+
+        reader.cancel();
+        const decoder = new TextDecoder();
+        return chunks.map((c) => decoder.decode(c, { stream: true })).join('') + '...[truncated]';
+      }
+
+      // Body size is acceptable, read normally
+      return await response.text();
+    } catch {
+      return '[Error reading response body]';
+    }
+  }
+
+  /**
    * Make request to HERE API with retry logic
    */
   async function request<T>(baseUrl: string, options: HereRequestOptions = {}): Promise<T> {
@@ -163,11 +200,12 @@ export function createHereClient(config: HereClientConfig) {
         // Handle error responses
         const isRetryableError = isRetryable(response.status);
 
-        // Try to get error message from response
+        // Safely read error body with size limit
+        const rawErrorBody = await safeReadResponseText(response);
+
+        // Try to parse error message from response
         let errorMessage = `HERE API error: ${response.status} ${response.statusText}`;
-        let rawErrorBody = '';
         try {
-          rawErrorBody = await response.text();
           const errorBody = JSON.parse(rawErrorBody) as { error?: string; error_description?: string; message?: string };
           if (errorBody.error_description) {
             errorMessage = `HERE API error: ${errorBody.error_description}`;
@@ -177,10 +215,11 @@ export function createHereClient(config: HereClientConfig) {
             errorMessage = `HERE API error: ${errorBody.error}`;
           }
         } catch {
-          // Ignore JSON parse errors, use raw body for logging
+          // Ignore JSON parse errors, include status and truncated body in message
+          errorMessage = `HERE API error: ${response.status} - ${rawErrorBody.slice(0, 200)}`;
         }
 
-        // Debug log: safe URL + first 500 chars of error body
+        // Debug log: safe URL + first 500 chars of error body (no API key)
         console.error('[HERE API Error] URL:', safeUrlForLogging);
         console.error('[HERE API Error] Status:', response.status);
         console.error('[HERE API Error] Body (first 500 chars):', rawErrorBody.slice(0, 500));
