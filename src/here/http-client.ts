@@ -122,6 +122,16 @@ export function createHereClient(config: HereClientConfig) {
   }
 
   /**
+   * Build a URL string without the API key for safe logging
+   */
+  function buildSafeUrlForLogging(baseUrl: string, params: Record<string, string | number | boolean | undefined>): string {
+    const safeParams = Object.entries(params)
+      .filter((entry): entry is [string, string | number | boolean] => entry[1] !== undefined)
+      .map(([k, v]) => [k, String(v)] as [string, string]);
+    return baseUrl + '?' + new URLSearchParams(safeParams).toString();
+  }
+
+  /**
    * Make request to HERE API with retry logic
    */
   async function request<T>(baseUrl: string, options: HereRequestOptions = {}): Promise<T> {
@@ -129,10 +139,7 @@ export function createHereClient(config: HereClientConfig) {
 
     // Build URL without exposing API key in errors
     const url = buildUrl(baseUrl, params);
-    const safeParams = Object.entries(params)
-      .filter((entry): entry is [string, string | number | boolean] => entry[1] !== undefined)
-      .map(([k, v]) => [k, String(v)] as [string, string]);
-    const safeUrlForErrors = baseUrl + '?' + new URLSearchParams(safeParams).toString();
+    const safeUrlForLogging = buildSafeUrlForLogging(baseUrl, params);
 
     let lastError: Error | undefined;
 
@@ -158,8 +165,10 @@ export function createHereClient(config: HereClientConfig) {
 
         // Try to get error message from response
         let errorMessage = `HERE API error: ${response.status} ${response.statusText}`;
+        let rawErrorBody = '';
         try {
-          const errorBody = await response.json() as { error?: string; error_description?: string; message?: string };
+          rawErrorBody = await response.text();
+          const errorBody = JSON.parse(rawErrorBody) as { error?: string; error_description?: string; message?: string };
           if (errorBody.error_description) {
             errorMessage = `HERE API error: ${errorBody.error_description}`;
           } else if (errorBody.message) {
@@ -168,8 +177,13 @@ export function createHereClient(config: HereClientConfig) {
             errorMessage = `HERE API error: ${errorBody.error}`;
           }
         } catch {
-          // Ignore JSON parse errors
+          // Ignore JSON parse errors, use raw body for logging
         }
+
+        // Debug log: safe URL + first 500 chars of error body
+        console.error('[HERE API Error] URL:', safeUrlForLogging);
+        console.error('[HERE API Error] Status:', response.status);
+        console.error('[HERE API Error] Body (first 500 chars):', rawErrorBody.slice(0, 500));
 
         // Don't leak API key in error messages
         errorMessage = sanitizeApiKey(errorMessage);

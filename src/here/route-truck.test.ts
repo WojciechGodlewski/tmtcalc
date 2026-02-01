@@ -119,7 +119,7 @@ describe('TruckRouter', () => {
       expect(result.hereResponse.routes[0].sections[0].summary.length).toBe(574000);
     });
 
-    it('includes correct vehicle dimensions in request', async () => {
+    it('includes correct vehicle dimensions in request using vehicle[] params', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => mockRoutingResponse,
@@ -135,11 +135,65 @@ describe('TruckRouter', () => {
       const profile = VEHICLE_PROFILES['ftl_13_6_33ep'];
 
       expect(url.searchParams.get('transportMode')).toBe('truck');
-      expect(url.searchParams.get('truck[grossWeight]')).toBe(String(profile.grossWeight));
-      expect(url.searchParams.get('truck[height]')).toBe(String(Math.round(profile.height * 100)));
-      expect(url.searchParams.get('truck[width]')).toBe(String(Math.round(profile.width * 100)));
-      expect(url.searchParams.get('truck[length]')).toBe(String(Math.round(profile.length * 100)));
-      expect(url.searchParams.get('truck[axleCount]')).toBe(String(profile.axleCount));
+      // Uses vehicle[] params (not truck[]) per Routing API v8 guidance
+      expect(url.searchParams.get('vehicle[grossWeight]')).toBe(String(profile.grossWeight));
+      expect(url.searchParams.get('vehicle[height]')).toBe(String(profile.heightCm));
+      expect(url.searchParams.get('vehicle[width]')).toBe(String(profile.widthCm));
+      expect(url.searchParams.get('vehicle[length]')).toBe(String(profile.lengthCm));
+      expect(url.searchParams.get('vehicle[axleCount]')).toBe(String(profile.axleCount));
+    });
+
+    it('does NOT mix truck[] and vehicle[] params in request', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockRoutingResponse,
+      });
+
+      await router.routeTruck({
+        origin: { lat: 52.52, lng: 13.405 },
+        destination: { lat: 52.2297, lng: 21.0122 },
+        vehicleProfileId: 'ftl_13_6_33ep',
+      });
+
+      const url = new URL(mockFetch.mock.calls[0][0]);
+
+      // Ensure no truck[] params are present
+      const allParams = Array.from(url.searchParams.keys());
+      const truckParams = allParams.filter((key) => key.startsWith('truck['));
+      expect(truckParams).toHaveLength(0);
+
+      // Ensure vehicle[] params are present
+      const vehicleParams = allParams.filter((key) => key.startsWith('vehicle['));
+      expect(vehicleParams.length).toBeGreaterThan(0);
+    });
+
+    it('sends vehicle dimensions as integers in cm', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockRoutingResponse,
+      });
+
+      await router.routeTruck({
+        origin: { lat: 52.52, lng: 13.405 },
+        destination: { lat: 52.2297, lng: 21.0122 },
+        vehicleProfileId: 'van_8ep',
+      });
+
+      const url = new URL(mockFetch.mock.calls[0][0]);
+
+      const height = Number(url.searchParams.get('vehicle[height]'));
+      const width = Number(url.searchParams.get('vehicle[width]'));
+      const length = Number(url.searchParams.get('vehicle[length]'));
+
+      // All dimensions should be integers (no decimals)
+      expect(Number.isInteger(height)).toBe(true);
+      expect(Number.isInteger(width)).toBe(true);
+      expect(Number.isInteger(length)).toBe(true);
+
+      // Values should be in cm (van is 270cm tall, 220cm wide, 650cm long)
+      expect(height).toBe(270);
+      expect(width).toBe(220);
+      expect(length).toBe(650);
     });
 
     it('uses correct profile for van', async () => {
@@ -155,7 +209,7 @@ describe('TruckRouter', () => {
       });
 
       const url = new URL(mockFetch.mock.calls[0][0]);
-      expect(url.searchParams.get('truck[grossWeight]')).toBe('3500');
+      expect(url.searchParams.get('vehicle[grossWeight]')).toBe('3500');
     });
 
     it('uses correct profile for solo truck', async () => {
@@ -171,7 +225,7 @@ describe('TruckRouter', () => {
       });
 
       const url = new URL(mockFetch.mock.calls[0][0]);
-      expect(url.searchParams.get('truck[grossWeight]')).toBe('18000');
+      expect(url.searchParams.get('vehicle[grossWeight]')).toBe('18000');
     });
 
     it('includes waypoints in request', async () => {

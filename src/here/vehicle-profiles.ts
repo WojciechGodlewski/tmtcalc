@@ -1,16 +1,16 @@
 /**
- * Vehicle profile definitions for HERE Routing API
- * All measurements in metric units
+ * Vehicle profile definitions for HERE Routing API v8
+ * Dimensions in centimeters (as required by HERE API), weight in kg
  */
 export interface VehicleProfile {
   /** Gross weight in kg */
   grossWeight: number;
-  /** Height in meters */
-  height: number;
-  /** Width in meters */
-  width: number;
-  /** Length in meters */
-  length: number;
+  /** Height in centimeters */
+  heightCm: number;
+  /** Width in centimeters */
+  widthCm: number;
+  /** Length in centimeters */
+  lengthCm: number;
   /** Number of axles */
   axleCount: number;
 }
@@ -19,6 +19,7 @@ export type VehicleProfileId = 'van_8ep' | 'solo_18t_23ep' | 'ftl_13_6_33ep';
 
 /**
  * Central vehicle profile definitions
+ * Dimensions in centimeters for HERE Routing API v8
  */
 export const VEHICLE_PROFILES: Record<VehicleProfileId, VehicleProfile> = {
   /**
@@ -27,9 +28,9 @@ export const VEHICLE_PROFILES: Record<VehicleProfileId, VehicleProfile> = {
    */
   van_8ep: {
     grossWeight: 3500,
-    height: 2.7,
-    width: 2.2,
-    length: 6.5,
+    heightCm: 270,
+    widthCm: 220,
+    lengthCm: 650,
     axleCount: 2,
   },
 
@@ -39,9 +40,9 @@ export const VEHICLE_PROFILES: Record<VehicleProfileId, VehicleProfile> = {
    */
   solo_18t_23ep: {
     grossWeight: 18000,
-    height: 3.6,
-    width: 2.55,
-    length: 10.0,
+    heightCm: 360,
+    widthCm: 255,
+    lengthCm: 1000,
     axleCount: 2,
   },
 
@@ -51,9 +52,9 @@ export const VEHICLE_PROFILES: Record<VehicleProfileId, VehicleProfile> = {
    */
   ftl_13_6_33ep: {
     grossWeight: 40000,
-    height: 4.0,
-    width: 2.55,
-    length: 16.5,
+    heightCm: 400,
+    widthCm: 255,
+    lengthCm: 1650,
     axleCount: 5,
   },
 } as const;

@@ -140,18 +140,19 @@ export function createTruckRouter(client: HereClient) {
     // Build via parameter for waypoints
     const viaPoints = waypoints.map(formatCoords);
 
-    // Build request params
+    // Build request params using vehicle[...] parameters (Routing API v8)
+    // Note: Do NOT mix truck[...] and vehicle[...] params - use only vehicle[...]
     const requestParams: Record<string, string | number | boolean | undefined> = {
       transportMode: 'truck',
       origin: formatCoords(origin),
       destination: formatCoords(destination),
       return: 'summary,tolls,actions,notices',
-      // Vehicle dimensions and weight
-      'truck[grossWeight]': profile.grossWeight,
-      'truck[height]': Math.round(profile.height * 100), // Convert to cm
-      'truck[width]': Math.round(profile.width * 100), // Convert to cm
-      'truck[length]': Math.round(profile.length * 100), // Convert to cm
-      'truck[axleCount]': profile.axleCount,
+      // Vehicle dimensions (in cm) and weight (in kg)
+      'vehicle[grossWeight]': profile.grossWeight,
+      'vehicle[height]': profile.heightCm,
+      'vehicle[width]': profile.widthCm,
+      'vehicle[length]': profile.lengthCm,
+      'vehicle[axleCount]': profile.axleCount,
     };
 
     // Add waypoints if present
