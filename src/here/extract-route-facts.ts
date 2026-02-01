@@ -382,21 +382,26 @@ function extractRouteId(response: HereRoutingResponse): string | null {
 
 /**
  * Extract countries from toll information (best effort)
+ * Preserves order of first appearance to maintain origin/destination
  */
 function extractCountriesFromTolls(sections: HereRouteSection[]): string[] {
-  const countries = new Set<string>();
+  const seen = new Set<string>();
+  const countries: string[] = [];
 
   for (const section of sections) {
     if (section.tolls) {
       for (const tollInfo of section.tolls) {
         for (const toll of tollInfo.tolls) {
-          countries.add(toll.countryCode);
+          if (!seen.has(toll.countryCode)) {
+            seen.add(toll.countryCode);
+            countries.push(toll.countryCode);
+          }
         }
       }
     }
   }
 
-  return Array.from(countries).sort();
+  return countries;
 }
 
 /**

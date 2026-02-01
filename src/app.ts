@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import type { HereService } from './here/index.js';
-import { registerRouteFactsRoutes } from './routes/index.js';
+import { registerRouteFactsRoutes, registerQuoteRoutes } from './routes/index.js';
 
 export interface AppOptions {
   hereService?: HereService;
@@ -18,6 +18,7 @@ export function buildApp(options: AppOptions = {}) {
   // Register API routes if HERE service is available
   if (options.hereService) {
     registerRouteFactsRoutes(app, options.hereService);
+    registerQuoteRoutes(app, options.hereService);
   }
 
   return app;
