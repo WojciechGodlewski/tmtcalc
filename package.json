@@ -11,11 +11,17 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "keywords": ["transport", "pricing", "calculator", "backend"],
+  "keywords": [
+    "transport",
+    "pricing",
+    "calculator",
+    "backend"
+  ],
   "license": "ISC",
   "dependencies": {
+    "dotenv": "^16.4.0",
     "fastify": "^4.26.0",
-    "dotenv": "^16.4.0"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
