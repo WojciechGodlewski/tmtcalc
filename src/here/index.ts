@@ -87,3 +87,6 @@ export type {
   HereRouteAction,
   HereNotice,
 } from './route-truck.js';
+
+// Re-export route facts extractor
+export { extractRouteFactsFromHere } from './extract-route-facts.js';
