@@ -1,0 +1,29 @@
+{
+  "name": "tmtcalc",
+  "version": "1.0.0",
+  "description": "Backend-only MVP for transport pricing calculator",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": ["transport", "pricing", "calculator", "backend"],
+  "license": "ISC",
+  "dependencies": {
+    "fastify": "^4.26.0",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
