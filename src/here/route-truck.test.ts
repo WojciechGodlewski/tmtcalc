@@ -265,6 +265,7 @@ describe('TruckRouter', () => {
       const returnFields = url.searchParams.get('return');
       expect(returnFields).toContain('summary');
       expect(returnFields).toContain('tolls');
+      expect(returnFields).toContain('polyline'); // Required when requesting actions
       expect(returnFields).toContain('actions');
       // Note: 'notices' is not a valid return type in HERE Routing v8
       expect(returnFields).not.toContain('notices');
