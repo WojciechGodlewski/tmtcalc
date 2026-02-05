@@ -266,7 +266,8 @@ describe('TruckRouter', () => {
       expect(returnFields).toContain('summary');
       expect(returnFields).toContain('tolls');
       expect(returnFields).toContain('actions');
-      expect(returnFields).toContain('notices');
+      // Note: 'notices' is not a valid return type in HERE Routing v8
+      expect(returnFields).not.toContain('notices');
     });
 
     it('includes toll information in response', async () => {
@@ -302,23 +303,6 @@ describe('TruckRouter', () => {
       expect(section.actions).toBeDefined();
       expect(section.actions!.length).toBe(2);
       expect(section.actions![0].action).toBe('depart');
-    });
-
-    it('includes notices/warnings in response', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockRoutingResponse,
-      });
-
-      const result = await router.routeTruck({
-        origin: { lat: 52.52, lng: 13.405 },
-        destination: { lat: 52.2297, lng: 21.0122 },
-        vehicleProfileId: 'ftl_13_6_33ep',
-      });
-
-      const section = result.hereResponse.routes[0].sections[0];
-      expect(section.notices).toBeDefined();
-      expect(section.notices![0].code).toBe('roadworks');
     });
 
     it('propagates API errors', async () => {

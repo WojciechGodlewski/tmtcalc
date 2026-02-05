@@ -146,7 +146,7 @@ export function createTruckRouter(client: HereClient) {
       transportMode: 'truck',
       origin: formatCoords(origin),
       destination: formatCoords(destination),
-      return: 'summary,tolls,actions,notices',
+      return: 'summary,tolls,actions',
       // Vehicle dimensions (in cm) and weight (in kg)
       'vehicle[grossWeight]': profile.grossWeight,
       'vehicle[height]': profile.heightCm,
