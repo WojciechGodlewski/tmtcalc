@@ -584,4 +584,201 @@ describe('extractRouteFactsFromHere', () => {
       expect(result2.raw.provider).toBe('here');
     });
   });
+
+  describe('toll parsing resilience', () => {
+    it('handles response without any tolls fields', () => {
+      const response: HereRoutingResponse = {
+        routes: [
+          {
+            id: 'route-no-tolls',
+            sections: [
+              {
+                id: 'section-1',
+                type: 'vehicle',
+                departure: {
+                  time: '2024-01-15T08:00:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 52.52, lng: 13.405 },
+                  },
+                },
+                arrival: {
+                  time: '2024-01-15T14:30:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 45.46, lng: 11.03 },
+                  },
+                },
+                summary: {
+                  duration: 23400,
+                  length: 800000,
+                  baseDuration: 21600,
+                },
+                transport: { mode: 'truck' },
+                // No tolls field at all
+              },
+            ],
+          },
+        ],
+      };
+
+      const result = extractRouteFactsFromHere(response);
+
+      expect(result.infrastructure.hasTollRoads).toBe(false);
+      expect(result.infrastructure.tollCountries).toEqual([]);
+      expect(result.infrastructure.tollCostEstimate).toBeNull();
+      expect(result.route.distanceKm).toBe(800);
+    });
+
+    it('handles response where tolls array is empty', () => {
+      const response: HereRoutingResponse = {
+        routes: [
+          {
+            id: 'route-empty-tolls',
+            sections: [
+              {
+                id: 'section-1',
+                type: 'vehicle',
+                departure: {
+                  time: '2024-01-15T08:00:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 52.52, lng: 13.405 },
+                  },
+                },
+                arrival: {
+                  time: '2024-01-15T14:30:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 45.46, lng: 11.03 },
+                  },
+                },
+                summary: {
+                  duration: 23400,
+                  length: 500000,
+                  baseDuration: 21600,
+                },
+                transport: { mode: 'truck' },
+                tolls: [], // Empty tolls array
+              },
+            ],
+          },
+        ],
+      };
+
+      const result = extractRouteFactsFromHere(response);
+
+      expect(result.infrastructure.hasTollRoads).toBe(false);
+      expect(result.infrastructure.tollCountries).toEqual([]);
+      expect(result.infrastructure.tollCostEstimate).toBeNull();
+    });
+
+    it('handles tollInfo with missing tolls array', () => {
+      const response: HereRoutingResponse = {
+        routes: [
+          {
+            id: 'route-malformed-tolls',
+            sections: [
+              {
+                id: 'section-1',
+                type: 'vehicle',
+                departure: {
+                  time: '2024-01-15T08:00:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 52.52, lng: 13.405 },
+                  },
+                },
+                arrival: {
+                  time: '2024-01-15T14:30:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 45.46, lng: 11.03 },
+                  },
+                },
+                summary: {
+                  duration: 23400,
+                  length: 600000,
+                  baseDuration: 21600,
+                },
+                transport: { mode: 'truck' },
+                tolls: [
+                  // tollInfo exists but tolls property is missing
+                  {} as { tolls: never[] },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+
+      const result = extractRouteFactsFromHere(response);
+
+      expect(result.infrastructure.hasTollRoads).toBe(false);
+      expect(result.infrastructure.tollCountries).toEqual([]);
+      expect(result.infrastructure.tollCostEstimate).toBeNull();
+    });
+
+    it('handles mixed valid and invalid toll entries', () => {
+      const response: HereRoutingResponse = {
+        routes: [
+          {
+            id: 'route-mixed-tolls',
+            sections: [
+              {
+                id: 'section-1',
+                type: 'vehicle',
+                departure: {
+                  time: '2024-01-15T08:00:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 52.52, lng: 13.405 },
+                  },
+                },
+                arrival: {
+                  time: '2024-01-15T14:30:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 45.46, lng: 11.03 },
+                  },
+                },
+                summary: {
+                  duration: 23400,
+                  length: 700000,
+                  baseDuration: 21600,
+                },
+                transport: { mode: 'truck' },
+                tolls: [
+                  // Invalid entry - no tolls array
+                  {} as { tolls: never[] },
+                  // Valid entry
+                  {
+                    tolls: [
+                      {
+                        countryCode: 'AUT',
+                        tollSystem: 'Austrian Tolls',
+                        fares: [
+                          {
+                            id: 'fare-1',
+                            price: { type: 'total', value: '15.50', currency: 'EUR' },
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+
+      const result = extractRouteFactsFromHere(response);
+
+      // Should extract valid data while skipping invalid
+      expect(result.infrastructure.hasTollRoads).toBe(true);
+      expect(result.infrastructure.tollCountries).toContain('AUT');
+      expect(result.infrastructure.tollCostEstimate).toBe(15.5);
+    });
+  });
 });

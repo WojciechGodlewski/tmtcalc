@@ -153,6 +153,7 @@ function isFerrySection(section: HereRouteSection): boolean {
 
 /**
  * Extract toll information from sections
+ * Handles various HERE response shapes where tolls may be missing or malformed
  */
 function extractTolls(sections: HereRouteSection[]): {
   hasTollRoads: boolean;
@@ -164,13 +165,28 @@ function extractTolls(sections: HereRouteSection[]): {
   let hasCostInfo = false;
 
   for (const section of sections) {
-    if (section.tolls) {
-      for (const tollInfo of section.tolls) {
-        for (const toll of tollInfo.tolls) {
-          tollCountries.add(toll.countryCode);
+    // Skip if section.tolls is missing or not an array
+    if (!section.tolls || !Array.isArray(section.tolls)) {
+      continue;
+    }
 
-          if (toll.fares) {
-            for (const fare of toll.fares) {
+    for (const tollInfo of section.tolls) {
+      // Skip if tollInfo.tolls is missing or not an array
+      if (!tollInfo || !tollInfo.tolls || !Array.isArray(tollInfo.tolls)) {
+        continue;
+      }
+
+      for (const toll of tollInfo.tolls) {
+        // Skip if toll is invalid
+        if (!toll || !toll.countryCode) {
+          continue;
+        }
+
+        tollCountries.add(toll.countryCode);
+
+        if (toll.fares && Array.isArray(toll.fares)) {
+          for (const fare of toll.fares) {
+            if (fare && fare.price && fare.price.value) {
               const value = parseFloat(fare.price.value);
               if (!isNaN(value)) {
                 totalCost += value;
@@ -383,19 +399,33 @@ function extractRouteId(response: HereRoutingResponse): string | null {
 /**
  * Extract countries from toll information (best effort)
  * Preserves order of first appearance to maintain origin/destination
+ * Handles various HERE response shapes where tolls may be missing or malformed
  */
 function extractCountriesFromTolls(sections: HereRouteSection[]): string[] {
   const seen = new Set<string>();
   const countries: string[] = [];
 
   for (const section of sections) {
-    if (section.tolls) {
-      for (const tollInfo of section.tolls) {
-        for (const toll of tollInfo.tolls) {
-          if (!seen.has(toll.countryCode)) {
-            seen.add(toll.countryCode);
-            countries.push(toll.countryCode);
-          }
+    // Skip if section.tolls is missing or not an array
+    if (!section.tolls || !Array.isArray(section.tolls)) {
+      continue;
+    }
+
+    for (const tollInfo of section.tolls) {
+      // Skip if tollInfo.tolls is missing or not an array
+      if (!tollInfo || !tollInfo.tolls || !Array.isArray(tollInfo.tolls)) {
+        continue;
+      }
+
+      for (const toll of tollInfo.tolls) {
+        // Skip if toll is invalid or missing countryCode
+        if (!toll || !toll.countryCode) {
+          continue;
+        }
+
+        if (!seen.has(toll.countryCode)) {
+          seen.add(toll.countryCode);
+          countries.push(toll.countryCode);
         }
       }
     }
