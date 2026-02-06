@@ -4,7 +4,7 @@
  */
 
 import { createHereClient, HereApiError, type HereClientConfig } from './http-client.js';
-import { createGeocoder, type GeocodeResult, type GeocodeOptions } from './geocode.js';
+import { createGeocoder, type GeocodeResult, type GeocodeOptions, type ReverseGeocodeResult } from './geocode.js';
 import { createTruckRouter, type RouteTruckParams, type RouteTruckResult } from './route-truck.js';
 import { VEHICLE_PROFILES, getVehicleProfile, type VehicleProfileId, type VehicleProfile } from './vehicle-profiles.js';
 
@@ -16,6 +16,7 @@ export interface HereServiceConfig {
 
 export interface HereService {
   geocode: (query: string, options?: GeocodeOptions) => Promise<GeocodeResult>;
+  reverseGeocode: (lat: number, lng: number) => Promise<ReverseGeocodeResult>;
   routeTruck: (params: RouteTruckParams) => Promise<RouteTruckResult>;
   clearGeocodeCache: () => void;
   getGeocodeCacheSize: () => number;
@@ -44,6 +45,7 @@ export function createHereService(config: HereServiceConfig): HereService {
 
   return {
     geocode: geocoder.geocode,
+    reverseGeocode: geocoder.reverseGeocode,
     routeTruck: truckRouter.routeTruck,
     clearGeocodeCache: geocoder.clearCache,
     getGeocodeCacheSize: geocoder.getCacheSize,
@@ -69,6 +71,7 @@ export {
   HereApiError,
   type GeocodeResult,
   type GeocodeOptions,
+  type ReverseGeocodeResult,
   type RouteTruckParams,
   type RouteTruckResult,
   type VehicleProfile,

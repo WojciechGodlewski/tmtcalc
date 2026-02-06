@@ -70,6 +70,10 @@ function createMockHereService(
       countryCode: 'DEU',
       confidence: 0.95,
     }),
+    reverseGeocode: vi.fn().mockResolvedValue({
+      countryCode: 'DEU',
+      label: 'Berlin, Germany',
+    }),
     routeTruck: vi.fn().mockResolvedValue({
       hereResponse: createMockRoutingResponse(responseOptions),
     }),

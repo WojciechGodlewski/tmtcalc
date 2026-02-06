@@ -10,6 +10,23 @@ import type { RouteFacts } from '../types/route-facts.js';
 import { ApiError, toApiError, type ApiErrorResponse } from '../errors.js';
 
 /**
+ * EU member state country codes (ISO 3166-1 alpha-3)
+ */
+const EU_COUNTRIES = new Set([
+  'AUT', 'BEL', 'BGR', 'HRV', 'CYP', 'CZE', 'DNK', 'EST', 'FIN', 'FRA',
+  'DEU', 'GRC', 'HUN', 'IRL', 'ITA', 'LVA', 'LTU', 'LUX', 'MLT', 'NLD',
+  'POL', 'PRT', 'ROU', 'SVK', 'SVN', 'ESP', 'SWE',
+]);
+
+/**
+ * Check if a country is in the EU
+ */
+function isEuCountry(countryCode: string | null): boolean {
+  if (!countryCode) return false;
+  return EU_COUNTRIES.has(countryCode.toUpperCase());
+}
+
+/**
  * Location point - either address or coordinates required
  */
 const LocationSchema = z.object({
@@ -42,6 +59,7 @@ interface ResolvedPoint {
   lat: number;
   lng: number;
   label?: string;
+  countryCode: string | null;
   source: 'provided' | 'geocoded';
 }
 
@@ -59,7 +77,7 @@ interface RouteFactsResponse {
 }
 
 /**
- * Resolve a location point to coordinates
+ * Resolve a location point to coordinates and country code
  */
 async function resolvePoint(
   hereService: HereService,
@@ -67,9 +85,13 @@ async function resolvePoint(
 ): Promise<ResolvedPoint> {
   // If coordinates are provided, use them directly
   if (location.lat !== undefined && location.lng !== undefined) {
+    // Use reverse geocoding to get the country code
+    const reverseResult = await hereService.reverseGeocode(location.lat, location.lng);
     return {
       lat: location.lat,
       lng: location.lng,
+      label: reverseResult.label || undefined,
+      countryCode: reverseResult.countryCode,
       source: 'provided',
     };
   }
@@ -81,6 +103,7 @@ async function resolvePoint(
       lat: result.lat,
       lng: result.lng,
       label: result.label,
+      countryCode: result.countryCode,
       source: 'geocoded',
     };
   }
@@ -140,6 +163,32 @@ export function createRouteFactsHandler(hereService: HereService) {
 
       // Extract RouteFacts
       const routeFacts = extractRouteFactsFromHere(routeResult.hereResponse);
+
+      // Populate geography with country info from resolved points
+      const originCountry = resolvedOrigin.countryCode;
+      const destinationCountry = resolvedDestination.countryCode;
+
+      routeFacts.geography.originCountry = originCountry;
+      routeFacts.geography.destinationCountry = destinationCountry;
+
+      // Determine if route is international
+      if (originCountry && destinationCountry) {
+        routeFacts.geography.isInternational = originCountry !== destinationCountry;
+      }
+
+      // Determine if route is within EU
+      if (originCountry && destinationCountry) {
+        const originIsEU = isEuCountry(originCountry);
+        const destIsEU = isEuCountry(destinationCountry);
+        // isEU is true if both endpoints are in EU countries
+        routeFacts.geography.isEU = originIsEU && destIsEU;
+      }
+
+      // Add origin/destination countries to countriesCrossed if not already present
+      const countriesSet = new Set(routeFacts.geography.countriesCrossed);
+      if (originCountry) countriesSet.add(originCountry);
+      if (destinationCountry) countriesSet.add(destinationCountry);
+      routeFacts.geography.countriesCrossed = Array.from(countriesSet);
 
       // Build response
       const resolvedPoints: ResolvedPoints = {

@@ -130,7 +130,7 @@ function extractTunnelFromText(text: string | undefined | null): Tunnel | null {
   }
 
   // Generic tunnel detection
-  if (lowerText.includes('tunnel')) {
+  if (lowerText.includes('tunnel') && text) {
     // Try to extract tunnel name from text
     const tunnelMatch = text.match(/(?:enter|through|via)\s+(?:the\s+)?([A-Z][a-zA-Z\s-]+)\s*[Tt]unnel/i);
     if (tunnelMatch) {

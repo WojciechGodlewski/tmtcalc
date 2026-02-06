@@ -48,6 +48,10 @@ function createMockHereService(): HereService {
       countryCode: 'DEU',
       confidence: 0.95,
     }),
+    reverseGeocode: vi.fn().mockResolvedValue({
+      countryCode: 'DEU',
+      label: 'Berlin, Germany',
+    }),
     routeTruck: vi.fn().mockResolvedValue({
       hereResponse: mockRoutingResponse,
     }),
@@ -431,6 +435,158 @@ describe('POST /api/route-facts', () => {
       });
 
       expect(response.statusCode).toBe(404);
+    });
+  });
+
+  describe('country inference', () => {
+    it('uses reverseGeocode for coords to get country code', async () => {
+      // Mock reverse geocode to return different countries
+      mockHereService.reverseGeocode = vi
+        .fn()
+        .mockResolvedValueOnce({ countryCode: 'POL', label: 'Poznań, Poland' })
+        .mockResolvedValueOnce({ countryCode: 'ITA', label: 'Verona, Italy' });
+
+      const app = buildApp({ hereService: mockHereService });
+      await app.ready();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/route-facts',
+        payload: {
+          origin: { lat: 52.4064, lng: 16.9252 },
+          destination: { lat: 45.4384, lng: 10.9916 },
+          vehicleProfileId: 'solo_18t_23ep',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+
+      // Verify reverseGeocode was called for both coordinates
+      expect(mockHereService.reverseGeocode).toHaveBeenCalledTimes(2);
+      expect(mockHereService.reverseGeocode).toHaveBeenCalledWith(52.4064, 16.9252);
+      expect(mockHereService.reverseGeocode).toHaveBeenCalledWith(45.4384, 10.9916);
+
+      // Verify country codes are populated
+      expect(body.routeFacts.geography.originCountry).toBe('POL');
+      expect(body.routeFacts.geography.destinationCountry).toBe('ITA');
+      expect(body.routeFacts.geography.isInternational).toBe(true);
+      expect(body.routeFacts.geography.isEU).toBe(true);
+
+      // Verify countries are in countriesCrossed
+      expect(body.routeFacts.geography.countriesCrossed).toContain('POL');
+      expect(body.routeFacts.geography.countriesCrossed).toContain('ITA');
+
+      // Verify resolved points have country code
+      expect(body.debug.resolvedPoints.origin.countryCode).toBe('POL');
+      expect(body.debug.resolvedPoints.destination.countryCode).toBe('ITA');
+    });
+
+    it('uses geocode countryCode for address input (no reverse geocode needed)', async () => {
+      // Setup geocode to return with country code
+      mockHereService.geocode = vi
+        .fn()
+        .mockResolvedValueOnce({
+          lat: 52.52,
+          lng: 13.405,
+          label: 'Berlin, Germany',
+          countryCode: 'DEU',
+          confidence: 0.95,
+        })
+        .mockResolvedValueOnce({
+          lat: 45.46,
+          lng: 9.19,
+          label: 'Milano, Italy',
+          countryCode: 'ITA',
+          confidence: 0.92,
+        });
+
+      const app = buildApp({ hereService: mockHereService });
+      await app.ready();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/route-facts',
+        payload: {
+          origin: { address: 'Berlin, Germany' },
+          destination: { address: 'Milano, Italy' },
+          vehicleProfileId: 'ftl_13_6_33ep',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+
+      // Verify geocode was called (not reverseGeocode)
+      expect(mockHereService.geocode).toHaveBeenCalledTimes(2);
+      expect(mockHereService.reverseGeocode).not.toHaveBeenCalled();
+
+      // Verify country codes are populated from geocode results
+      expect(body.routeFacts.geography.originCountry).toBe('DEU');
+      expect(body.routeFacts.geography.destinationCountry).toBe('ITA');
+      expect(body.routeFacts.geography.isInternational).toBe(true);
+      expect(body.routeFacts.geography.isEU).toBe(true);
+
+      // Verify resolved points have country code
+      expect(body.debug.resolvedPoints.origin.countryCode).toBe('DEU');
+      expect(body.debug.resolvedPoints.destination.countryCode).toBe('ITA');
+    });
+
+    it('sets isEU to false when one country is not in EU', async () => {
+      mockHereService.reverseGeocode = vi
+        .fn()
+        .mockResolvedValueOnce({ countryCode: 'GBR', label: 'London, UK' })
+        .mockResolvedValueOnce({ countryCode: 'FRA', label: 'Paris, France' });
+
+      const app = buildApp({ hereService: mockHereService });
+      await app.ready();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/route-facts',
+        payload: {
+          origin: { lat: 51.5074, lng: -0.1278 },
+          destination: { lat: 48.8566, lng: 2.3522 },
+          vehicleProfileId: 'van_8ep',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+
+      // UK is not in EU (post-Brexit), France is
+      expect(body.routeFacts.geography.originCountry).toBe('GBR');
+      expect(body.routeFacts.geography.destinationCountry).toBe('FRA');
+      expect(body.routeFacts.geography.isInternational).toBe(true);
+      expect(body.routeFacts.geography.isEU).toBe(false);
+    });
+
+    it('sets isInternational to false for domestic routes', async () => {
+      mockHereService.reverseGeocode = vi
+        .fn()
+        .mockResolvedValueOnce({ countryCode: 'DEU', label: 'Berlin, Germany' })
+        .mockResolvedValueOnce({ countryCode: 'DEU', label: 'Munich, Germany' });
+
+      const app = buildApp({ hereService: mockHereService });
+      await app.ready();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/route-facts',
+        payload: {
+          origin: { lat: 52.52, lng: 13.405 },
+          destination: { lat: 48.1351, lng: 11.582 },
+          vehicleProfileId: 'solo_18t_23ep',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+
+      expect(body.routeFacts.geography.originCountry).toBe('DEU');
+      expect(body.routeFacts.geography.destinationCountry).toBe('DEU');
+      expect(body.routeFacts.geography.isInternational).toBe(false);
+      expect(body.routeFacts.geography.isEU).toBe(true);
     });
   });
 });
