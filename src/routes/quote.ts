@@ -31,13 +31,25 @@ const ALPHA3_TO_ALPHA2: Record<string, string> = {
 
 /**
  * Convert country code to ISO alpha-2 format
+ * - Normalizes 'UK' to 'GB' (ISO standard)
  */
 function toAlpha2(countryCode: string | null): string | null {
   if (!countryCode) return null;
   const normalized = countryCode.toUpperCase().trim();
+  // Special case: UK -> GB (ISO standard)
+  if (normalized === 'UK') return 'GB';
   if (normalized.length === 2) return normalized;
   if (normalized.length === 3) return ALPHA3_TO_ALPHA2[normalized] ?? null;
   return null;
+}
+
+/**
+ * Check if a country code represents the United Kingdom
+ */
+function isUkCode(countryCode: string | null): boolean {
+  if (!countryCode) return false;
+  const normalized = countryCode.toUpperCase().trim();
+  return normalized === 'GB' || normalized === 'GBR' || normalized === 'UK';
 }
 
 /**
@@ -228,6 +240,11 @@ export function createQuoteHandler(hereService: HereService) {
       if (originCountry) countriesSet.add(originCountry);
       if (destinationCountry) countriesSet.add(destinationCountry);
       routeFacts.geography.countriesCrossed = Array.from(countriesSet);
+
+      // Update riskFlags.isUK based on normalized country codes
+      const hasUkInRoute = isUkCode(destinationCountry) ||
+        routeFacts.geography.countriesCrossed.some(isUkCode);
+      routeFacts.riskFlags.isUK = hasUkInRoute;
 
       // Calculate quote
       const quoteOptions: QuoteOptions = {
