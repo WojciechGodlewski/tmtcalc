@@ -25,6 +25,21 @@ function asLower(value: unknown): string {
 }
 
 /**
+ * Remove diacritics (accents) from a string for case-insensitive matching
+ * e.g., "Fréjus" -> "frejus", "Traforo" -> "traforo"
+ */
+function removeDiacritics(text: string): string {
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+/**
+ * Normalize text for tunnel matching: lowercase and remove diacritics
+ */
+function normalizeForMatching(text: string): string {
+  return removeDiacritics(text.toLowerCase());
+}
+
+/**
  * Safely convert a value to an array
  * Returns empty array if value is not an array
  */
@@ -38,13 +53,22 @@ const BALTIC_COUNTRIES = new Set(['LTU', 'LVA', 'EST', 'LT', 'LV', 'EE']);
 const UK_COUNTRIES = new Set(['GBR', 'GB', 'UK']);
 const ALPS_COUNTRIES = new Set(['AUT', 'CHE', 'ITA', 'AT', 'CH', 'IT']);
 
-// Known major tunnels
+// Known major tunnels - patterns are normalized (lowercase, no diacritics)
 const KNOWN_TUNNELS: Record<string, { name: string; category: string; country: string }> = {
+  // Fréjus Tunnel variations (all normalized)
   frejus: { name: 'Fréjus Tunnel', category: 'alpine', country: 'FRA/ITA' },
-  fréjus: { name: 'Fréjus Tunnel', category: 'alpine', country: 'FRA/ITA' },
+  'tunnel du frejus': { name: 'Fréjus Tunnel', category: 'alpine', country: 'FRA/ITA' },
+  'traforo del frejus': { name: 'Fréjus Tunnel', category: 'alpine', country: 'FRA/ITA' },
+  'galleria del frejus': { name: 'Fréjus Tunnel', category: 'alpine', country: 'FRA/ITA' },
+  // Mont Blanc Tunnel variations (all normalized)
   'mont blanc': { name: 'Mont Blanc Tunnel', category: 'alpine', country: 'FRA/ITA' },
   'mont-blanc': { name: 'Mont Blanc Tunnel', category: 'alpine', country: 'FRA/ITA' },
   montblanc: { name: 'Mont Blanc Tunnel', category: 'alpine', country: 'FRA/ITA' },
+  'tunnel du mont blanc': { name: 'Mont Blanc Tunnel', category: 'alpine', country: 'FRA/ITA' },
+  'tunnel du mont-blanc': { name: 'Mont Blanc Tunnel', category: 'alpine', country: 'FRA/ITA' },
+  'traforo del monte bianco': { name: 'Mont Blanc Tunnel', category: 'alpine', country: 'FRA/ITA' },
+  'monte bianco': { name: 'Mont Blanc Tunnel', category: 'alpine', country: 'FRA/ITA' },
+  // Other Alpine tunnels
   gotthard: { name: 'Gotthard Tunnel', category: 'alpine', country: 'CHE' },
   brenner: { name: 'Brenner Tunnel', category: 'alpine', country: 'AUT/ITA' },
   arlberg: { name: 'Arlberg Tunnel', category: 'alpine', country: 'AUT' },
@@ -54,6 +78,7 @@ const KNOWN_TUNNELS: Record<string, { name: string; category: string; country: s
   'great st bernard': { name: 'Great St Bernard Tunnel', category: 'alpine', country: 'CHE/ITA' },
   simplon: { name: 'Simplon Tunnel', category: 'alpine', country: 'CHE' },
   lotschberg: { name: 'Lötschberg Tunnel', category: 'alpine', country: 'CHE' },
+  // Non-Alpine tunnels
   channel: { name: 'Channel Tunnel', category: 'undersea', country: 'FRA/GBR' },
   eurotunnel: { name: 'Channel Tunnel', category: 'undersea', country: 'FRA/GBR' },
 };
@@ -111,16 +136,22 @@ function isIslandCountry(country: string): boolean {
 
 /**
  * Extract tunnel info from text (action instruction or notice message)
+ * Uses diacritics-insensitive matching for robust detection
  */
 function extractTunnelFromText(text: string | undefined | null): Tunnel | null {
-  const lowerText = asLower(text);
-  if (!lowerText) {
+  if (!text) {
     return null;
   }
 
-  // Check for known tunnels
+  // Normalize text for matching: lowercase + remove diacritics
+  const normalizedText = normalizeForMatching(text);
+  if (!normalizedText) {
+    return null;
+  }
+
+  // Check for known tunnels using normalized patterns
   for (const [pattern, tunnelInfo] of Object.entries(KNOWN_TUNNELS)) {
-    if (lowerText.includes(pattern)) {
+    if (normalizedText.includes(pattern)) {
       return {
         name: tunnelInfo.name,
         category: tunnelInfo.category,
@@ -130,12 +161,22 @@ function extractTunnelFromText(text: string | undefined | null): Tunnel | null {
   }
 
   // Generic tunnel detection
-  if (lowerText.includes('tunnel') && text) {
+  const lowerText = text.toLowerCase();
+  if (lowerText.includes('tunnel') || lowerText.includes('traforo') || lowerText.includes('galleria')) {
     // Try to extract tunnel name from text
-    const tunnelMatch = text.match(/(?:enter|through|via)\s+(?:the\s+)?([A-Z][a-zA-Z\s-]+)\s*[Tt]unnel/i);
+    const tunnelMatch = text.match(/(?:enter|through|via|take)\s+(?:the\s+)?([A-Z][a-zA-ZÀ-ÿ\s-]+)\s*[Tt]unnel/i);
     if (tunnelMatch) {
       return {
         name: tunnelMatch[1].trim() + ' Tunnel',
+        category: null,
+        country: null,
+      };
+    }
+    // Try Italian patterns
+    const italianMatch = text.match(/[Tt]raforo\s+(?:del\s+)?([A-Z][a-zA-ZÀ-ÿ\s-]+)/i);
+    if (italianMatch) {
+      return {
+        name: italianMatch[1].trim() + ' Tunnel',
         category: null,
         country: null,
       };

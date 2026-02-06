@@ -16,6 +16,7 @@ function createTestRouteFacts(overrides: {
   destinationCountry?: string | null;
   countriesCrossed?: string[];
   isUK?: boolean;
+  crossesAlps?: boolean;
   hasTunnel?: boolean;
   tunnels?: Array<{ name: string | null; category: string | null; country: string | null }>;
 }): RouteFacts {
@@ -44,7 +45,7 @@ function createTestRouteFacts(overrides: {
     riskFlags: {
       isUK: overrides.isUK ?? false,
       isIsland: false,
-      crossesAlps: false,
+      crossesAlps: overrides.crossesAlps ?? false,
       isScandinavia: false,
       isBaltic: false,
     },
@@ -208,6 +209,7 @@ describe('Pricing Engine', () => {
         distanceKm: 800,
         originCountry: 'ITA',
         destinationCountry: 'FRA',
+        crossesAlps: true,
         hasTunnel: true,
         tunnels: [{ name: 'Fréjus Tunnel', category: 'alpine', country: 'FRA/ITA' }],
       });
@@ -216,7 +218,7 @@ describe('Pricing Engine', () => {
 
       // 800 * 1.2 + 200 + 200 (tunnel) = 1360
       expect(result.lineItems.surcharges).toHaveLength(1);
-      expect(result.lineItems.surcharges[0].type).toBe('frejusOrMontBlanc');
+      expect(result.lineItems.surcharges[0].type).toBe('alpsTunnel');
       expect(result.lineItems.surcharges[0].amount).toBe(200);
       expect(result.finalPrice).toBe(1360);
     });
@@ -226,13 +228,14 @@ describe('Pricing Engine', () => {
         distanceKm: 600,
         originCountry: 'ITA',
         destinationCountry: 'FRA',
+        crossesAlps: true,
         hasTunnel: true,
         tunnels: [{ name: 'Mont Blanc Tunnel', category: 'alpine', country: 'FRA/ITA' }],
       });
 
       const result = calculatePrice(model, routeFacts);
 
-      expect(result.lineItems.surcharges.some((s) => s.type === 'frejusOrMontBlanc')).toBe(true);
+      expect(result.lineItems.surcharges.some((s) => s.type === 'alpsTunnel')).toBe(true);
     });
 
     it('applies both UK and tunnel surcharges', () => {
@@ -241,6 +244,7 @@ describe('Pricing Engine', () => {
         originCountry: 'ITA',
         destinationCountry: 'GBR',
         isUK: true,
+        crossesAlps: true,
         hasTunnel: true,
         tunnels: [{ name: 'Fréjus Tunnel', category: 'alpine', country: 'FRA/ITA' }],
       });
@@ -250,7 +254,7 @@ describe('Pricing Engine', () => {
       // 1500 * 1.2 + 200 + 400 (UK) + 200 (tunnel) = 2600 < 2700 UK min
       expect(result.lineItems.surcharges).toHaveLength(2);
       expect(result.lineItems.surcharges.some((s) => s.type === 'ukFerry')).toBe(true);
-      expect(result.lineItems.surcharges.some((s) => s.type === 'frejusOrMontBlanc')).toBe(true);
+      expect(result.lineItems.surcharges.some((s) => s.type === 'alpsTunnel')).toBe(true);
       expect(result.finalPrice).toBe(2700); // UK minimum applies
     });
 
@@ -358,6 +362,7 @@ describe('Pricing Engine', () => {
         originCountry: 'ITA',
         destinationCountry: 'GB',
         isUK: true,
+        crossesAlps: true,
         hasTunnel: true,
         tunnels: [{ name: 'Fréjus Tunnel', category: 'alpine', country: 'FRA/ITA' }],
       });
@@ -367,7 +372,7 @@ describe('Pricing Engine', () => {
       // 2000 * 1.2 + 200 + 400 (UK) + 200 (tunnel) = 3200
       expect(result.lineItems.surcharges).toHaveLength(2);
       expect(result.lineItems.surcharges.some((s) => s.type === 'ukFerry')).toBe(true);
-      expect(result.lineItems.surcharges.some((s) => s.type === 'frejusOrMontBlanc')).toBe(true);
+      expect(result.lineItems.surcharges.some((s) => s.type === 'alpsTunnel')).toBe(true);
       expect(result.finalPrice).toBe(3200);
     });
 
@@ -547,6 +552,111 @@ describe('Pricing Engine', () => {
 
       expect(result.lineItems.surcharges).toHaveLength(1);
       expect(result.lineItems.surcharges[0].type).toBe('ukFerry');
+    });
+  });
+
+  describe('Alps tunnel surcharge (crossesAlps flag)', () => {
+    it('applies Alps surcharge when crossesAlps=true and Fréjus tunnel detected', () => {
+      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-eu')!;
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 800,
+        originCountry: 'ITA',
+        destinationCountry: 'FRA',
+        crossesAlps: true,
+        hasTunnel: true,
+        tunnels: [{ name: 'Fréjus Tunnel', category: 'alpine', country: 'FRA/ITA' }],
+      });
+
+      const result = calculatePrice(model, routeFacts);
+
+      expect(result.lineItems.surcharges).toHaveLength(1);
+      expect(result.lineItems.surcharges[0].type).toBe('alpsTunnel');
+      expect(result.lineItems.surcharges[0].amount).toBe(200);
+    });
+
+    it('applies Alps surcharge when crossesAlps=true and Mont Blanc tunnel detected', () => {
+      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-eu')!;
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 600,
+        originCountry: 'ITA',
+        destinationCountry: 'FRA',
+        crossesAlps: true,
+        hasTunnel: true,
+        tunnels: [{ name: 'Mont Blanc Tunnel', category: 'alpine', country: 'FRA/ITA' }],
+      });
+
+      const result = calculatePrice(model, routeFacts);
+
+      expect(result.lineItems.surcharges.some((s) => s.type === 'alpsTunnel')).toBe(true);
+    });
+
+    it('does NOT apply Alps surcharge when crossesAlps=false (no alpine tunnel)', () => {
+      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-eu')!;
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 800,
+        originCountry: 'ITA',
+        destinationCountry: 'DEU',
+        crossesAlps: false,
+        hasTunnel: false,
+        tunnels: [],
+      });
+
+      const result = calculatePrice(model, routeFacts);
+
+      expect(result.lineItems.surcharges.some((s) => s.type === 'alpsTunnel')).toBe(false);
+    });
+
+    it('does NOT apply Alps surcharge when crossesAlps=true but no Fréjus/Mont Blanc', () => {
+      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-eu')!;
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 800,
+        originCountry: 'ITA',
+        destinationCountry: 'AUT',
+        crossesAlps: true, // Route crosses Alps (Austria)
+        hasTunnel: true,
+        tunnels: [{ name: 'Brenner Tunnel', category: 'alpine', country: 'AUT/ITA' }], // Not Fréjus/Mont Blanc
+      });
+
+      const result = calculatePrice(model, routeFacts);
+
+      // Alps surcharge should NOT apply - it's specifically for Fréjus/Mont Blanc
+      expect(result.lineItems.surcharges.some((s) => s.type === 'alpsTunnel')).toBe(false);
+    });
+
+    it('applies Alps surcharge for IT->UK route with Fréjus', () => {
+      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-uk')!;
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 1500,
+        originCountry: 'ITA',
+        destinationCountry: 'GB',
+        isUK: true,
+        crossesAlps: true,
+        hasTunnel: true,
+        tunnels: [{ name: 'Fréjus Tunnel', category: 'alpine', country: 'FRA/ITA' }],
+      });
+
+      const result = calculatePrice(model, routeFacts);
+
+      // Should have both UK crossing and Alps tunnel surcharges
+      expect(result.lineItems.surcharges).toHaveLength(2);
+      expect(result.lineItems.surcharges.some((s) => s.type === 'ukFerry')).toBe(true);
+      expect(result.lineItems.surcharges.some((s) => s.type === 'alpsTunnel')).toBe(true);
+    });
+
+    it('applies surcharge for Monte Bianco (Italian name for Mont Blanc)', () => {
+      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-eu')!;
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 600,
+        originCountry: 'ITA',
+        destinationCountry: 'FRA',
+        crossesAlps: true,
+        hasTunnel: true,
+        tunnels: [{ name: 'Traforo del Monte Bianco', category: 'alpine', country: 'FRA/ITA' }],
+      });
+
+      const result = calculatePrice(model, routeFacts);
+
+      expect(result.lineItems.surcharges.some((s) => s.type === 'alpsTunnel')).toBe(true);
     });
   });
 

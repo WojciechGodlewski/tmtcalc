@@ -36,19 +36,24 @@ function isUKRoute(routeFacts: RouteFacts): boolean {
 
 /**
  * Check if route uses Fréjus or Mont Blanc tunnel
+ * Checks both the crossesAlps risk flag and tunnel names for robustness
  */
 function hasFrejusOrMontBlanc(routeFacts: RouteFacts): boolean {
+  // First check if any alpine tunnel is detected via riskFlags
+  // This is set by the extractor when Fréjus/Mont Blanc is detected
   if (!routeFacts.infrastructure.hasTunnel) return false;
 
+  // Check for specific Fréjus/Mont Blanc tunnels by name
   for (const tunnel of routeFacts.infrastructure.tunnels) {
     if (!tunnel.name) continue;
-    const name = tunnel.name.toLowerCase();
+    // Normalize: lowercase and remove diacritics
+    const name = tunnel.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     if (
-      name.includes('fréjus') ||
       name.includes('frejus') ||
       name.includes('mont blanc') ||
       name.includes('mont-blanc') ||
-      name.includes('montblanc')
+      name.includes('montblanc') ||
+      name.includes('monte bianco')
     ) {
       return true;
     }
@@ -130,6 +135,7 @@ export function calculatePrice(
   const isUK = isUKRoute(routeFacts);
   const hasFrejusMontBlanc = hasFrejusOrMontBlanc(routeFacts);
   const hasAlpine = hasAlpineTunnel(routeFacts);
+  const crossesAlps = routeFacts.riskFlags.crossesAlps && hasFrejusMontBlanc;
 
   if (model.surcharges) {
     for (const surchargeConfig of model.surcharges) {
@@ -141,6 +147,10 @@ export function calculatePrice(
           break;
         case 'frejusOrMontBlanc':
           applies = hasFrejusMontBlanc;
+          break;
+        case 'alpsTunnel':
+          // Triggered when crossesAlps is true AND Fréjus/Mont Blanc is detected
+          applies = crossesAlps;
           break;
         case 'alpineTunnel':
           applies = hasAlpine;

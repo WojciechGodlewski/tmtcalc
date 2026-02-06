@@ -355,7 +355,7 @@ describe('POST /api/quote', () => {
       const body = response.json();
 
       expect(body.quote.lineItems.surcharges.some(
-        (s: { type: string }) => s.type === 'frejusOrMontBlanc'
+        (s: { type: string }) => s.type === 'alpsTunnel'
       )).toBe(true);
     });
   });

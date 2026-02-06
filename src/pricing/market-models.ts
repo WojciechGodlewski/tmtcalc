@@ -47,7 +47,7 @@ export const SOLO_MODELS: MarketModel[] = [
         description: 'UK crossing surcharge',
       },
       {
-        type: 'frejusOrMontBlanc',
+        type: 'alpsTunnel',
         amount: 200,
         description: 'Fréjus/Mont Blanc tunnel surcharge',
       },
@@ -72,7 +72,7 @@ export const SOLO_MODELS: MarketModel[] = [
         description: 'UK ferry surcharge',
       },
       {
-        type: 'frejusOrMontBlanc',
+        type: 'alpsTunnel',
         amount: 200,
         description: 'Fréjus/Mont Blanc tunnel surcharge',
       },

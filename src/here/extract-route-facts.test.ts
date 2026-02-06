@@ -1131,4 +1131,141 @@ describe('extractRouteFactsFromHere', () => {
       expect(result.infrastructure.tunnels.length).toBeGreaterThan(0);
     });
   });
+
+  describe('diacritics-insensitive tunnel detection', () => {
+    it('detects "Tunnel du Fréjus" with diacritics', () => {
+      const response: HereRoutingResponse = {
+        routes: [{
+          id: 'route-frejus-fr',
+          sections: [{
+            id: 'section-1',
+            type: 'vehicle',
+            departure: { time: '2024-01-15T08:00:00+01:00', place: { type: 'place', location: { lat: 45.07, lng: 7.69 } } },
+            arrival: { time: '2024-01-15T14:30:00+01:00', place: { type: 'place', location: { lat: 45.76, lng: 4.84 } } },
+            summary: { duration: 23400, length: 300000, baseDuration: 21600 },
+            transport: { mode: 'truck' },
+            actions: [{ action: 'continue', duration: 600, length: 10000, instruction: 'Enter the Tunnel du Fréjus', offset: 0 }],
+          }],
+        }],
+      };
+
+      const result = extractRouteFactsFromHere(response);
+      expect(result.infrastructure.hasTunnel).toBe(true);
+      const tunnel = result.infrastructure.tunnels.find((t) => t.name?.includes('Fréjus'));
+      expect(tunnel).toBeDefined();
+      expect(tunnel?.category).toBe('alpine');
+      expect(result.riskFlags.crossesAlps).toBe(true);
+    });
+
+    it('detects "Tunnel du Frejus" without diacritics', () => {
+      const response: HereRoutingResponse = {
+        routes: [{
+          id: 'route-frejus-no-accent',
+          sections: [{
+            id: 'section-1',
+            type: 'vehicle',
+            departure: { time: '2024-01-15T08:00:00+01:00', place: { type: 'place', location: { lat: 45.07, lng: 7.69 } } },
+            arrival: { time: '2024-01-15T14:30:00+01:00', place: { type: 'place', location: { lat: 45.76, lng: 4.84 } } },
+            summary: { duration: 23400, length: 300000, baseDuration: 21600 },
+            transport: { mode: 'truck' },
+            actions: [{ action: 'continue', duration: 600, length: 10000, instruction: 'Enter Tunnel du Frejus towards France', offset: 0 }],
+          }],
+        }],
+      };
+
+      const result = extractRouteFactsFromHere(response);
+      expect(result.infrastructure.hasTunnel).toBe(true);
+      expect(result.infrastructure.tunnels.some((t) => t.name?.includes('Fréjus'))).toBe(true);
+      expect(result.riskFlags.crossesAlps).toBe(true);
+    });
+
+    it('detects "Traforo del Frejus" (Italian name)', () => {
+      const response: HereRoutingResponse = {
+        routes: [{
+          id: 'route-frejus-it',
+          sections: [{
+            id: 'section-1',
+            type: 'vehicle',
+            departure: { time: '2024-01-15T08:00:00+01:00', place: { type: 'place', location: { lat: 45.07, lng: 7.69 } } },
+            arrival: { time: '2024-01-15T14:30:00+01:00', place: { type: 'place', location: { lat: 45.76, lng: 4.84 } } },
+            summary: { duration: 23400, length: 300000, baseDuration: 21600 },
+            transport: { mode: 'truck' },
+            actions: [{ action: 'continue', duration: 600, length: 10000, instruction: 'Enter Traforo del Frejus', offset: 0 }],
+          }],
+        }],
+      };
+
+      const result = extractRouteFactsFromHere(response);
+      expect(result.infrastructure.hasTunnel).toBe(true);
+      expect(result.infrastructure.tunnels.some((t) => t.name?.includes('Fréjus'))).toBe(true);
+      expect(result.riskFlags.crossesAlps).toBe(true);
+    });
+
+    it('detects "Tunnel du Mont Blanc" (French name)', () => {
+      const response: HereRoutingResponse = {
+        routes: [{
+          id: 'route-montblanc-fr',
+          sections: [{
+            id: 'section-1',
+            type: 'vehicle',
+            departure: { time: '2024-01-15T08:00:00+01:00', place: { type: 'place', location: { lat: 45.07, lng: 7.69 } } },
+            arrival: { time: '2024-01-15T14:30:00+01:00', place: { type: 'place', location: { lat: 45.76, lng: 4.84 } } },
+            summary: { duration: 23400, length: 300000, baseDuration: 21600 },
+            transport: { mode: 'truck' },
+            actions: [{ action: 'continue', duration: 600, length: 10000, instruction: 'Take the Tunnel du Mont Blanc', offset: 0 }],
+          }],
+        }],
+      };
+
+      const result = extractRouteFactsFromHere(response);
+      expect(result.infrastructure.hasTunnel).toBe(true);
+      expect(result.infrastructure.tunnels.some((t) => t.name?.includes('Mont Blanc'))).toBe(true);
+      expect(result.riskFlags.crossesAlps).toBe(true);
+    });
+
+    it('detects "Traforo del Monte Bianco" (Italian name)', () => {
+      const response: HereRoutingResponse = {
+        routes: [{
+          id: 'route-montblanc-it',
+          sections: [{
+            id: 'section-1',
+            type: 'vehicle',
+            departure: { time: '2024-01-15T08:00:00+01:00', place: { type: 'place', location: { lat: 45.07, lng: 7.69 } } },
+            arrival: { time: '2024-01-15T14:30:00+01:00', place: { type: 'place', location: { lat: 45.76, lng: 4.84 } } },
+            summary: { duration: 23400, length: 300000, baseDuration: 21600 },
+            transport: { mode: 'truck' },
+            actions: [{ action: 'continue', duration: 600, length: 10000, instruction: 'Enter Traforo del Monte Bianco', offset: 0 }],
+          }],
+        }],
+      };
+
+      const result = extractRouteFactsFromHere(response);
+      expect(result.infrastructure.hasTunnel).toBe(true);
+      expect(result.infrastructure.tunnels.some((t) => t.name?.includes('Mont Blanc'))).toBe(true);
+      expect(result.riskFlags.crossesAlps).toBe(true);
+    });
+
+    it('does not detect Alps tunnel for non-alpine tunnels', () => {
+      const response: HereRoutingResponse = {
+        routes: [{
+          id: 'route-other-tunnel',
+          sections: [{
+            id: 'section-1',
+            type: 'vehicle',
+            departure: { time: '2024-01-15T08:00:00+01:00', place: { type: 'place', location: { lat: 52.52, lng: 13.405 } } },
+            arrival: { time: '2024-01-15T14:30:00+01:00', place: { type: 'place', location: { lat: 52.37, lng: 4.90 } } },
+            summary: { duration: 23400, length: 600000, baseDuration: 21600 },
+            transport: { mode: 'truck' },
+            actions: [{ action: 'continue', duration: 600, length: 10000, instruction: 'Enter the Elbe Tunnel', offset: 0 }],
+          }],
+        }],
+      };
+
+      const result = extractRouteFactsFromHere(response);
+      expect(result.infrastructure.hasTunnel).toBe(true);
+      // Should detect as generic tunnel, not alpine
+      expect(result.infrastructure.tunnels.some((t) => t.category === 'alpine')).toBe(false);
+      expect(result.riskFlags.crossesAlps).toBe(false);
+    });
+  });
 });
