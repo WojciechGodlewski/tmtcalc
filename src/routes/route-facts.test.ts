@@ -34,6 +34,15 @@ function createMockHereService(): HereService {
               baseDuration: 21600,
             },
             transport: { mode: 'truck' },
+            actions: [
+              {
+                action: 'depart',
+                duration: 0,
+                length: 0,
+                instruction: 'Head east on A115',
+                offset: 0,
+              },
+            ],
           },
         ],
       },
@@ -54,6 +63,12 @@ function createMockHereService(): HereService {
     }),
     routeTruck: vi.fn().mockResolvedValue({
       hereResponse: mockRoutingResponse,
+      debug: {
+        maskedUrl: 'https://router.hereapi.com/v8/routes?transportMode=truck&origin=52.52,13.405&destination=52.2297,21.0122',
+        via: [],
+        viaCount: 0,
+        actionsSample: ['Head east on A115'],
+      },
     }),
     clearGeocodeCache: vi.fn(),
     getGeocodeCacheSize: vi.fn().mockReturnValue(0),
@@ -435,6 +450,134 @@ describe('POST /api/route-facts', () => {
       });
 
       expect(response.statusCode).toBe(404);
+    });
+  });
+
+  describe('waypoint propagation debug telemetry', () => {
+    it('includes hereRequest debug info with viaCount and maskedUrl', async () => {
+      // Configure mock to return debug info with via points
+      mockHereService.routeTruck = vi.fn().mockResolvedValue({
+        hereResponse: {
+          routes: [{
+            id: 'mock-route-1',
+            sections: [{
+              id: 'section-1',
+              type: 'vehicle',
+              departure: { time: '2024-01-15T08:00:00+01:00', place: { type: 'place', location: { lat: 45.0703, lng: 7.6869 } } },
+              arrival: { time: '2024-01-15T14:30:00+01:00', place: { type: 'place', location: { lat: 45.5646, lng: 5.9178 } } },
+              summary: { duration: 23400, length: 150000, baseDuration: 21600 },
+              transport: { mode: 'truck' },
+              actions: [{ action: 'depart', duration: 0, length: 0, instruction: 'Head west on A32', offset: 0 }],
+            }],
+          }],
+        },
+        debug: {
+          maskedUrl: 'https://router.hereapi.com/v8/routes?transportMode=truck&origin=45.0703,7.6869&destination=45.5646,5.9178&via=45.0505%2C6.7333!passThrough%3Dtrue',
+          via: [{ lat: 45.0505, lng: 6.7333 }],
+          viaCount: 1,
+          actionsSample: ['Head west on A32'],
+        },
+      });
+
+      const app = buildApp({ hereService: mockHereService });
+      await app.ready();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/route-facts',
+        payload: {
+          origin: { address: 'Turin, Italy' },
+          destination: { address: 'Chambéry, France' },
+          waypoints: [{ address: 'Bardonecchia, Italy' }],
+          vehicleProfileId: 'solo_18t_23ep',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+
+      // Verify hereRequest debug info
+      expect(body.debug.hereRequest).toBeDefined();
+      expect(body.debug.hereRequest.viaCount).toBe(1);
+      expect(body.debug.hereRequest.via).toHaveLength(1);
+      expect(body.debug.hereRequest.maskedUrl).toContain('via=');
+
+      // Verify hereResponse debug info
+      expect(body.debug.hereResponse).toBeDefined();
+      expect(body.debug.hereResponse.actionsSample).toBeDefined();
+      expect(Array.isArray(body.debug.hereResponse.actionsSample)).toBe(true);
+    });
+
+    it('accepts via as an alias for waypoints', async () => {
+      mockHereService.routeTruck = vi.fn().mockResolvedValue({
+        hereResponse: {
+          routes: [{
+            id: 'mock-route-1',
+            sections: [{
+              id: 'section-1',
+              type: 'vehicle',
+              departure: { time: '2024-01-15T08:00:00+01:00', place: { type: 'place', location: { lat: 52.52, lng: 13.405 } } },
+              arrival: { time: '2024-01-15T14:30:00+01:00', place: { type: 'place', location: { lat: 52.2297, lng: 21.0122 } } },
+              summary: { duration: 23400, length: 574000, baseDuration: 21600 },
+              transport: { mode: 'truck' },
+            }],
+          }],
+        },
+        debug: {
+          maskedUrl: 'https://router.hereapi.com/v8/routes?via=51.5%2C14.5!passThrough%3Dtrue',
+          via: [{ lat: 51.5, lng: 14.5 }],
+          viaCount: 1,
+          actionsSample: [],
+        },
+      });
+
+      const app = buildApp({ hereService: mockHereService });
+      await app.ready();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/route-facts',
+        payload: {
+          origin: { lat: 52.52, lng: 13.405 },
+          destination: { lat: 52.2297, lng: 21.0122 },
+          via: [{ lat: 51.5, lng: 14.5 }],  // Using 'via' instead of 'waypoints'
+          vehicleProfileId: 'ftl_13_6_33ep',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+
+      // routeTruck should have been called with waypoints (internal canonical name)
+      expect(mockHereService.routeTruck).toHaveBeenCalledWith(
+        expect.objectContaining({
+          waypoints: [{ lat: 51.5, lng: 14.5 }],
+        })
+      );
+
+      // Verify debug shows via points
+      expect(body.debug.hereRequest.viaCount).toBe(1);
+    });
+
+    it('returns viaCount=0 when no waypoints provided', async () => {
+      const app = buildApp({ hereService: mockHereService });
+      await app.ready();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/route-facts',
+        payload: {
+          origin: { lat: 52.52, lng: 13.405 },
+          destination: { lat: 52.2297, lng: 21.0122 },
+          vehicleProfileId: 'ftl_13_6_33ep',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+
+      expect(body.debug.hereRequest.viaCount).toBe(0);
+      expect(body.debug.hereRequest.via).toHaveLength(0);
     });
   });
 

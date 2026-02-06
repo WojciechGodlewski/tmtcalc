@@ -20,8 +20,16 @@ export interface RouteTruckParams {
   vehicleProfileId: VehicleProfileId;
 }
 
+export interface RouteDebugInfo {
+  maskedUrl: string;
+  via: Array<{ lat: number; lng: number }>;
+  viaCount: number;
+  actionsSample: string[];
+}
+
 export interface RouteTruckResult {
   hereResponse: HereRoutingResponse;
+  debug: RouteDebugInfo;
 }
 
 // HERE Routing API response types
@@ -122,13 +130,73 @@ function formatCoords(coords: Coordinates): string {
 }
 
 /**
+ * Build masked URL for debug logging (no API key)
+ */
+function buildMaskedUrl(
+  baseUrl: string,
+  params: Record<string, string | number | boolean | undefined>,
+  viaStrings: string[]
+): string {
+  const searchParams = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) {
+      searchParams.set(key, String(value));
+    }
+  }
+
+  // Add via params
+  for (const via of viaStrings) {
+    searchParams.append('via', via);
+  }
+
+  return baseUrl + '?' + searchParams.toString();
+}
+
+/**
+ * Collect action strings from HERE response for tunnel detection debug
+ * Returns up to 20 strings from actions[].instruction
+ */
+function collectActionsSample(response: HereRoutingResponse): string[] {
+  const sample: string[] = [];
+  const MAX_SAMPLE = 20;
+
+  if (!response.routes || response.routes.length === 0) {
+    return sample;
+  }
+
+  for (const route of response.routes) {
+    if (!route.sections) continue;
+
+    for (const section of route.sections) {
+      if (!section.actions) continue;
+
+      for (const action of section.actions) {
+        if (sample.length >= MAX_SAMPLE) break;
+
+        // Collect instruction text
+        if (action.instruction) {
+          sample.push(action.instruction);
+        }
+      }
+
+      if (sample.length >= MAX_SAMPLE) break;
+    }
+
+    if (sample.length >= MAX_SAMPLE) break;
+  }
+
+  return sample;
+}
+
+/**
  * Create truck routing function
  */
 export function createTruckRouter(client: HereClient) {
   /**
    * Calculate truck route between origin and destination
    * @param params Route parameters including vehicle profile
-   * @returns HERE routing response with route details
+   * @returns HERE routing response with route details and debug info
    * @throws HereApiError on API errors
    */
   async function routeTruck(params: RouteTruckParams): Promise<RouteTruckResult> {
@@ -137,8 +205,9 @@ export function createTruckRouter(client: HereClient) {
     // Get vehicle profile
     const profile = getVehicleProfile(vehicleProfileId);
 
-    // Build via parameter for waypoints
-    const viaPoints = waypoints.map(formatCoords);
+    // Build via parameter for waypoints - use passThrough=true to force passing through
+    // HERE v8 format: via=lat,lng!passThrough=true
+    const viaStrings = waypoints.map((wp) => `${wp.lat},${wp.lng}!passThrough=true`);
 
     // Build request params using vehicle[...] parameters (Routing API v8)
     // Note: Do NOT mix truck[...] and vehicle[...] params - use only vehicle[...]
@@ -155,19 +224,33 @@ export function createTruckRouter(client: HereClient) {
       'vehicle[axleCount]': profile.axleCount,
     };
 
-    // Add waypoints if present
-    if (viaPoints.length > 0) {
-      viaPoints.forEach((via, index) => {
-        requestParams[`via${index}`] = via;
-      });
+    // Build multi-params for via points (same key repeated)
+    const multiParams: Record<string, string[]> = {};
+    if (viaStrings.length > 0) {
+      multiParams.via = viaStrings;
     }
+
+    // Build masked URL for debug
+    const maskedUrl = buildMaskedUrl(ROUTING_API_URL, requestParams, viaStrings);
 
     // Make API request
     const response = await client.request<HereRoutingResponse>(ROUTING_API_URL, {
       params: requestParams,
+      multiParams: Object.keys(multiParams).length > 0 ? multiParams : undefined,
     });
 
-    return { hereResponse: response };
+    // Collect actions sample for debug
+    const actionsSample = collectActionsSample(response);
+
+    return {
+      hereResponse: response,
+      debug: {
+        maskedUrl,
+        via: waypoints,
+        viaCount: waypoints.length,
+        actionsSample,
+      },
+    };
   }
 
   return { routeTruck };

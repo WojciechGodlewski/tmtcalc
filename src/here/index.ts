@@ -5,7 +5,7 @@
 
 import { createHereClient, HereApiError, type HereClientConfig } from './http-client.js';
 import { createGeocoder, type GeocodeResult, type GeocodeOptions, type ReverseGeocodeResult } from './geocode.js';
-import { createTruckRouter, type RouteTruckParams, type RouteTruckResult } from './route-truck.js';
+import { createTruckRouter, type RouteTruckParams, type RouteTruckResult, type RouteDebugInfo } from './route-truck.js';
 import { VEHICLE_PROFILES, getVehicleProfile, type VehicleProfileId, type VehicleProfile } from './vehicle-profiles.js';
 
 export interface HereServiceConfig {
@@ -74,6 +74,7 @@ export {
   type ReverseGeocodeResult,
   type RouteTruckParams,
   type RouteTruckResult,
+  type RouteDebugInfo,
   type VehicleProfile,
   type VehicleProfileId,
   VEHICLE_PROFILES,
