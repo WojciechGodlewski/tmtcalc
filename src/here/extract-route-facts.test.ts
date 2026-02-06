@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { extractRouteFactsFromHere } from './extract-route-facts.js';
-import type { HereRoutingResponse } from './route-truck.js';
+import type {
+  HereRoutingResponse,
+  HereRouteSection,
+  HereRouteAction,
+  HereNotice,
+  HereToll,
+} from './route-truck.js';
 
 // Test fixtures
 
@@ -779,6 +785,350 @@ describe('extractRouteFactsFromHere', () => {
       expect(result.infrastructure.hasTollRoads).toBe(true);
       expect(result.infrastructure.tollCountries).toContain('AUT');
       expect(result.infrastructure.tollCostEstimate).toBe(15.5);
+    });
+  });
+
+  describe('optional fields resilience (guards against undefined.toLowerCase)', () => {
+    it('handles action with missing instruction', () => {
+      const response: HereRoutingResponse = {
+        routes: [
+          {
+            id: 'route-missing-instruction',
+            sections: [
+              {
+                id: 'section-1',
+                type: 'vehicle',
+                departure: {
+                  time: '2024-01-15T08:00:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 52.52, lng: 13.405 },
+                  },
+                },
+                arrival: {
+                  time: '2024-01-15T14:30:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 45.46, lng: 11.03 },
+                  },
+                },
+                summary: {
+                  duration: 23400,
+                  length: 500000,
+                  baseDuration: 21600,
+                },
+                transport: { mode: 'truck' },
+                actions: [
+                  {
+                    action: 'ferry',
+                    duration: 3600,
+                    length: 50000,
+                    // instruction is missing (undefined)
+                    offset: 0,
+                  } as HereRouteAction,
+                ],
+              },
+            ],
+          },
+        ],
+      };
+
+      // Should not throw
+      expect(() => extractRouteFactsFromHere(response)).not.toThrow();
+
+      const result = extractRouteFactsFromHere(response);
+      expect(result.infrastructure.hasFerry).toBe(true);
+    });
+
+    it('handles notice with missing title and code', () => {
+      const response: HereRoutingResponse = {
+        routes: [
+          {
+            id: 'route-missing-notice-fields',
+            sections: [
+              {
+                id: 'section-1',
+                type: 'vehicle',
+                departure: {
+                  time: '2024-01-15T08:00:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 52.52, lng: 13.405 },
+                  },
+                },
+                arrival: {
+                  time: '2024-01-15T14:30:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 45.46, lng: 11.03 },
+                  },
+                },
+                summary: {
+                  duration: 23400,
+                  length: 500000,
+                  baseDuration: 21600,
+                },
+                transport: { mode: 'truck' },
+                notices: [
+                  {
+                    // title is missing
+                    // code is missing
+                    severity: 'info',
+                  } as HereNotice,
+                ],
+              },
+            ],
+          },
+        ],
+      };
+
+      // Should not throw
+      expect(() => extractRouteFactsFromHere(response)).not.toThrow();
+
+      const result = extractRouteFactsFromHere(response);
+      expect(result.raw.warnings).toHaveLength(1);
+      expect(result.raw.warnings[0].code).toBe('unknown');
+    });
+
+    it('handles section with missing actions array', () => {
+      const response: HereRoutingResponse = {
+        routes: [
+          {
+            id: 'route-no-actions',
+            sections: [
+              {
+                id: 'section-1',
+                type: 'vehicle',
+                departure: {
+                  time: '2024-01-15T08:00:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 52.52, lng: 13.405 },
+                  },
+                },
+                arrival: {
+                  time: '2024-01-15T14:30:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 45.46, lng: 11.03 },
+                  },
+                },
+                summary: {
+                  duration: 23400,
+                  length: 500000,
+                  baseDuration: 21600,
+                },
+                transport: { mode: 'truck' },
+                // actions array is missing entirely
+              },
+            ],
+          },
+        ],
+      };
+
+      // Should not throw
+      expect(() => extractRouteFactsFromHere(response)).not.toThrow();
+
+      const result = extractRouteFactsFromHere(response);
+      expect(result.infrastructure.hasFerry).toBe(false);
+      expect(result.infrastructure.hasTunnel).toBe(false);
+    });
+
+    it('handles section with missing notices array', () => {
+      const response: HereRoutingResponse = {
+        routes: [
+          {
+            id: 'route-no-notices',
+            sections: [
+              {
+                id: 'section-1',
+                type: 'vehicle',
+                departure: {
+                  time: '2024-01-15T08:00:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 52.52, lng: 13.405 },
+                  },
+                },
+                arrival: {
+                  time: '2024-01-15T14:30:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 45.46, lng: 11.03 },
+                  },
+                },
+                summary: {
+                  duration: 23400,
+                  length: 500000,
+                  baseDuration: 21600,
+                },
+                transport: { mode: 'truck' },
+                // notices array is missing entirely
+              },
+            ],
+          },
+        ],
+      };
+
+      // Should not throw
+      expect(() => extractRouteFactsFromHere(response)).not.toThrow();
+
+      const result = extractRouteFactsFromHere(response);
+      expect(result.raw.warnings).toHaveLength(0);
+      expect(result.regulatory.truckRestricted).toBe(false);
+    });
+
+    it('handles section with missing transport object', () => {
+      const response: HereRoutingResponse = {
+        routes: [
+          {
+            id: 'route-no-transport',
+            sections: [
+              {
+                id: 'section-1',
+                type: 'ferry',
+                departure: {
+                  time: '2024-01-15T08:00:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 52.52, lng: 13.405 },
+                  },
+                },
+                arrival: {
+                  time: '2024-01-15T14:30:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 45.46, lng: 11.03 },
+                  },
+                },
+                summary: {
+                  duration: 23400,
+                  length: 500000,
+                  baseDuration: 21600,
+                },
+                // transport is missing entirely
+              } as HereRouteSection,
+            ],
+          },
+        ],
+      };
+
+      // Should not throw
+      expect(() => extractRouteFactsFromHere(response)).not.toThrow();
+
+      const result = extractRouteFactsFromHere(response);
+      expect(result.infrastructure.hasFerry).toBe(true);
+    });
+
+    it('handles toll entry with missing countryCode', () => {
+      const response: HereRoutingResponse = {
+        routes: [
+          {
+            id: 'route-toll-no-country',
+            sections: [
+              {
+                id: 'section-1',
+                type: 'vehicle',
+                departure: {
+                  time: '2024-01-15T08:00:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 52.52, lng: 13.405 },
+                  },
+                },
+                arrival: {
+                  time: '2024-01-15T14:30:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 45.46, lng: 11.03 },
+                  },
+                },
+                summary: {
+                  duration: 23400,
+                  length: 500000,
+                  baseDuration: 21600,
+                },
+                transport: { mode: 'truck' },
+                tolls: [
+                  {
+                    tolls: [
+                      {
+                        // countryCode is missing
+                        tollSystem: 'Some System',
+                        fares: [
+                          {
+                            id: 'fare-1',
+                            price: { type: 'total', value: '10.00', currency: 'EUR' },
+                          },
+                        ],
+                      } as HereToll,
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+
+      // Should not throw
+      expect(() => extractRouteFactsFromHere(response)).not.toThrow();
+
+      const result = extractRouteFactsFromHere(response);
+      // No valid toll countries since countryCode is missing
+      expect(result.infrastructure.tollCountries).toEqual([]);
+    });
+
+    it('handles tunnel instruction without actual tunnel name', () => {
+      const response: HereRoutingResponse = {
+        routes: [
+          {
+            id: 'route-tunnel-no-name',
+            sections: [
+              {
+                id: 'section-1',
+                type: 'vehicle',
+                departure: {
+                  time: '2024-01-15T08:00:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 52.52, lng: 13.405 },
+                  },
+                },
+                arrival: {
+                  time: '2024-01-15T14:30:00+01:00',
+                  place: {
+                    type: 'place',
+                    location: { lat: 45.46, lng: 11.03 },
+                  },
+                },
+                summary: {
+                  duration: 23400,
+                  length: 500000,
+                  baseDuration: 21600,
+                },
+                transport: { mode: 'truck' },
+                actions: [
+                  {
+                    action: 'continue',
+                    duration: 600,
+                    length: 5000,
+                    instruction: 'Enter tunnel', // Generic tunnel without specific name
+                    offset: 0,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+
+      // Should not throw
+      expect(() => extractRouteFactsFromHere(response)).not.toThrow();
+
+      const result = extractRouteFactsFromHere(response);
+      expect(result.infrastructure.hasTunnel).toBe(true);
+      expect(result.infrastructure.tunnels.length).toBeGreaterThan(0);
     });
   });
 });

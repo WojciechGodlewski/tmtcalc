@@ -16,6 +16,22 @@ import type {
   HereToll,
 } from './route-truck.js';
 
+/**
+ * Safely convert a value to lowercase string
+ * Returns empty string if value is null/undefined
+ */
+function asLower(value: unknown): string {
+  return (value ?? '').toString().toLowerCase();
+}
+
+/**
+ * Safely convert a value to an array
+ * Returns empty array if value is not an array
+ */
+function asArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
 // Country code sets for risk flag detection
 const SCANDINAVIA_COUNTRIES = new Set(['SWE', 'NOR', 'DNK', 'FIN', 'SE', 'NO', 'DK', 'FI']);
 const BALTIC_COUNTRIES = new Set(['LTU', 'LVA', 'EST', 'LT', 'LV', 'EE']);
@@ -54,8 +70,8 @@ const ISLAND_COUNTRIES = new Set([
 /**
  * Normalize country code to 3-letter ISO format
  */
-function normalizeCountryCode(code: string): string {
-  return code.toUpperCase();
+function normalizeCountryCode(code: string | undefined | null): string {
+  return asLower(code).toUpperCase();
 }
 
 /**
@@ -96,8 +112,11 @@ function isIslandCountry(country: string): boolean {
 /**
  * Extract tunnel info from text (action instruction or notice message)
  */
-function extractTunnelFromText(text: string): Tunnel | null {
-  const lowerText = text.toLowerCase();
+function extractTunnelFromText(text: string | undefined | null): Tunnel | null {
+  const lowerText = asLower(text);
+  if (!lowerText) {
+    return null;
+  }
 
   // Check for known tunnels
   for (const [pattern, tunnelInfo] of Object.entries(KNOWN_TUNNELS)) {
@@ -135,7 +154,7 @@ function extractTunnelFromText(text: string): Tunnel | null {
  * Check if an action represents a ferry segment
  */
 function isFerryAction(action: HereRouteAction): boolean {
-  const instruction = action.instruction.toLowerCase();
+  const instruction = asLower(action.instruction);
   return (
     action.action === 'ferry' ||
     instruction.includes('ferry') ||
@@ -148,7 +167,7 @@ function isFerryAction(action: HereRouteAction): boolean {
  * Check if a section is a ferry section
  */
 function isFerrySection(section: HereRouteSection): boolean {
-  return section.transport.mode === 'ferry' || section.type === 'ferry';
+  return section.transport?.mode === 'ferry' || section.type === 'ferry';
 }
 
 /**
@@ -223,11 +242,9 @@ function extractFerryInfo(sections: HereRouteSection[]): {
     }
 
     // Check actions within section
-    if (section.actions) {
-      for (const action of section.actions) {
-        if (isFerryAction(action)) {
-          ferrySegments++;
-        }
+    for (const action of asArray<HereRouteAction>(section.actions)) {
+      if (isFerryAction(action)) {
+        ferrySegments++;
       }
     }
   }
@@ -250,29 +267,25 @@ function extractTunnels(sections: HereRouteSection[]): {
 
   for (const section of sections) {
     // Check actions for tunnel mentions
-    if (section.actions) {
-      for (const action of section.actions) {
-        const tunnel = extractTunnelFromText(action.instruction);
-        if (tunnel) {
-          const key = tunnel.name || 'unnamed';
-          if (!seenTunnels.has(key)) {
-            seenTunnels.add(key);
-            tunnels.push(tunnel);
-          }
+    for (const action of asArray<HereRouteAction>(section.actions)) {
+      const tunnel = extractTunnelFromText(action.instruction);
+      if (tunnel) {
+        const key = tunnel.name || 'unnamed';
+        if (!seenTunnels.has(key)) {
+          seenTunnels.add(key);
+          tunnels.push(tunnel);
         }
       }
     }
 
     // Check notices for tunnel mentions
-    if (section.notices) {
-      for (const notice of section.notices) {
-        const tunnel = extractTunnelFromText(notice.title);
-        if (tunnel) {
-          const key = tunnel.name || 'unnamed';
-          if (!seenTunnels.has(key)) {
-            seenTunnels.add(key);
-            tunnels.push(tunnel);
-          }
+    for (const notice of asArray<HereNotice>(section.notices)) {
+      const tunnel = extractTunnelFromText(notice.title);
+      if (tunnel) {
+        const key = tunnel.name || 'unnamed';
+        if (!seenTunnels.has(key)) {
+          seenTunnels.add(key);
+          tunnels.push(tunnel);
         }
       }
     }
@@ -306,24 +319,26 @@ function extractRestrictions(sections: HereRouteSection[]): {
   ]);
 
   for (const section of sections) {
-    if (section.notices) {
-      for (const notice of section.notices) {
-        warnings.push({
-          code: notice.code,
-          message: notice.title,
-        });
+    for (const notice of asArray<HereNotice>(section.notices)) {
+      const noticeCode = notice.code ?? '';
+      const noticeTitle = notice.title ?? '';
+      const lowerTitle = asLower(noticeTitle);
 
-        // Check for truck restrictions
-        if (
-          restrictionCodes.has(notice.code) ||
-          notice.title.toLowerCase().includes('restriction') ||
-          notice.title.toLowerCase().includes('prohibited') ||
-          notice.title.toLowerCase().includes('not allowed')
-        ) {
-          if (!seenReasons.has(notice.title)) {
-            seenReasons.add(notice.title);
-            restrictionReasons.push(notice.title);
-          }
+      warnings.push({
+        code: noticeCode || 'unknown',
+        message: noticeTitle,
+      });
+
+      // Check for truck restrictions
+      if (
+        restrictionCodes.has(noticeCode) ||
+        lowerTitle.includes('restriction') ||
+        lowerTitle.includes('prohibited') ||
+        lowerTitle.includes('not allowed')
+      ) {
+        if (noticeTitle && !seenReasons.has(noticeTitle)) {
+          seenReasons.add(noticeTitle);
+          restrictionReasons.push(noticeTitle);
         }
       }
     }
