@@ -113,13 +113,19 @@ const VehicleProfileIdSchema = z.enum(['van_8ep', 'solo_18t_23ep', 'ftl_13_6_33e
 
 /**
  * Request body schema
+ * Accepts either 'waypoints' or 'via' (via is an alias for waypoints)
  */
 const RouteFactsRequestSchema = z.object({
   origin: LocationSchema,
   destination: LocationSchema,
   waypoints: z.array(LocationSchema).optional(),
+  via: z.array(LocationSchema).optional(),
   vehicleProfileId: VehicleProfileIdSchema,
-});
+}).transform((data) => ({
+  ...data,
+  // Use 'via' if 'waypoints' is not provided, internally use 'waypoints'
+  waypoints: data.waypoints ?? data.via,
+}));
 
 type RouteFactsRequest = z.infer<typeof RouteFactsRequestSchema>;
 
@@ -137,10 +143,22 @@ interface ResolvedPoints {
   waypoints?: ResolvedPoint[];
 }
 
+interface HereRequestDebug {
+  maskedUrl: string;
+  via: Array<{ lat: number; lng: number }>;
+  viaCount: number;
+}
+
+interface HereResponseDebug {
+  actionsSample: string[];
+}
+
 interface RouteFactsResponse {
   routeFacts: RouteFacts;
   debug: {
     resolvedPoints: ResolvedPoints;
+    hereRequest: HereRequestDebug;
+    hereResponse: HereResponseDebug;
   };
 }
 
@@ -285,6 +303,14 @@ export function createRouteFactsHandler(hereService: HereService) {
         routeFacts,
         debug: {
           resolvedPoints,
+          hereRequest: {
+            maskedUrl: routeResult.debug.maskedUrl,
+            via: routeResult.debug.via,
+            viaCount: routeResult.debug.viaCount,
+          },
+          hereResponse: {
+            actionsSample: routeResult.debug.actionsSample,
+          },
         },
       };
     } catch (error) {

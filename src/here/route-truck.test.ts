@@ -228,7 +228,7 @@ describe('TruckRouter', () => {
       expect(url.searchParams.get('vehicle[grossWeight]')).toBe('18000');
     });
 
-    it('includes waypoints in request', async () => {
+    it('includes waypoints in request with passThrough flag', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => mockRoutingResponse,
@@ -245,8 +245,53 @@ describe('TruckRouter', () => {
       });
 
       const url = new URL(mockFetch.mock.calls[0][0]);
-      expect(url.searchParams.get('via0')).toBe('51.5,14.5');
-      expect(url.searchParams.get('via1')).toBe('52,17');
+      // HERE v8 uses repeated 'via' param with passThrough flag
+      const viaParams = url.searchParams.getAll('via');
+      expect(viaParams).toHaveLength(2);
+      expect(viaParams[0]).toBe('51.5,14.5!passThrough=true');
+      expect(viaParams[1]).toBe('52,17!passThrough=true');
+    });
+
+    it('returns debug info with viaCount and maskedUrl', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockRoutingResponse,
+      });
+
+      const result = await router.routeTruck({
+        origin: { lat: 52.52, lng: 13.405 },
+        destination: { lat: 52.2297, lng: 21.0122 },
+        waypoints: [
+          { lat: 51.5, lng: 14.5 },
+        ],
+        vehicleProfileId: 'ftl_13_6_33ep',
+      });
+
+      // Debug info should be present
+      expect(result.debug).toBeDefined();
+      expect(result.debug.viaCount).toBe(1);
+      expect(result.debug.via).toEqual([{ lat: 51.5, lng: 14.5 }]);
+      expect(result.debug.maskedUrl).toContain('via=51.5%2C14.5');
+      expect(result.debug.maskedUrl).not.toContain('apiKey');
+      expect(result.debug.actionsSample).toBeDefined();
+      expect(Array.isArray(result.debug.actionsSample)).toBe(true);
+    });
+
+    it('returns actionsSample from HERE response actions', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockRoutingResponse,
+      });
+
+      const result = await router.routeTruck({
+        origin: { lat: 52.52, lng: 13.405 },
+        destination: { lat: 52.2297, lng: 21.0122 },
+        vehicleProfileId: 'ftl_13_6_33ep',
+      });
+
+      // Should have collected action instructions
+      expect(result.debug.actionsSample).toContain('Head east on Unter den Linden');
+      expect(result.debug.actionsSample).toContain('Turn right onto A10');
     });
 
     it('requests required return fields', async () => {

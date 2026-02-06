@@ -71,7 +71,19 @@ function createMockHereService(
   const {
     originCountry = 'DEU',
     destinationCountry = 'DEU',
+    hasTunnel = false,
+    tunnelName,
   } = responseOptions;
+
+  const mockResponse = createMockRoutingResponse(responseOptions);
+  const actionsSample: string[] = [];
+  if (mockResponse.routes[0]?.sections[0]?.actions) {
+    for (const action of mockResponse.routes[0].sections[0].actions) {
+      if (action.instruction) {
+        actionsSample.push(action.instruction);
+      }
+    }
+  }
 
   return {
     geocode: vi.fn().mockResolvedValue({
@@ -85,7 +97,13 @@ function createMockHereService(
       .mockResolvedValueOnce({ countryCode: originCountry, label: 'Origin' })
       .mockResolvedValueOnce({ countryCode: destinationCountry, label: 'Destination' }),
     routeTruck: vi.fn().mockResolvedValue({
-      hereResponse: createMockRoutingResponse(responseOptions),
+      hereResponse: mockResponse,
+      debug: {
+        maskedUrl: 'https://router.hereapi.com/v8/routes?transportMode=truck&origin=52.52,13.405&destination=45.46,9.19',
+        via: [],
+        viaCount: 0,
+        actionsSample,
+      },
     }),
     clearGeocodeCache: vi.fn(),
     getGeocodeCacheSize: vi.fn().mockReturnValue(0),

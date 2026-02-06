@@ -12,6 +12,8 @@ export interface HereClientConfig {
 export interface HereRequestOptions {
   method?: 'GET' | 'POST';
   params?: Record<string, string | number | boolean | undefined>;
+  /** Multi-value params (same key repeated) - e.g., { via: ['lat1,lng1', 'lat2,lng2'] } */
+  multiParams?: Record<string, string[]>;
   body?: unknown;
 }
 
@@ -83,7 +85,11 @@ export function createHereClient(config: HereClientConfig) {
   /**
    * Build URL with query parameters
    */
-  function buildUrl(baseUrl: string, params: Record<string, string | number | boolean | undefined>): string {
+  function buildUrl(
+    baseUrl: string,
+    params: Record<string, string | number | boolean | undefined>,
+    multiParams?: Record<string, string[]>
+  ): string {
     const url = new URL(baseUrl);
 
     // Add API key
@@ -93,6 +99,15 @@ export function createHereClient(config: HereClientConfig) {
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined) {
         url.searchParams.set(key, String(value));
+      }
+    }
+
+    // Add multi-value params (same key repeated)
+    if (multiParams) {
+      for (const [key, values] of Object.entries(multiParams)) {
+        for (const value of values) {
+          url.searchParams.append(key, value);
+        }
       }
     }
 
@@ -125,11 +140,30 @@ export function createHereClient(config: HereClientConfig) {
   /**
    * Build a URL string without the API key for safe logging
    */
-  function buildSafeUrlForLogging(baseUrl: string, params: Record<string, string | number | boolean | undefined>): string {
-    const safeParams = Object.entries(params)
-      .filter((entry): entry is [string, string | number | boolean] => entry[1] !== undefined)
-      .map(([k, v]) => [k, String(v)] as [string, string]);
-    return baseUrl + '?' + new URLSearchParams(safeParams).toString();
+  function buildSafeUrlForLogging(
+    baseUrl: string,
+    params: Record<string, string | number | boolean | undefined>,
+    multiParams?: Record<string, string[]>
+  ): string {
+    const searchParams = new URLSearchParams();
+
+    // Add single-value params
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined) {
+        searchParams.set(key, String(value));
+      }
+    }
+
+    // Add multi-value params
+    if (multiParams) {
+      for (const [key, values] of Object.entries(multiParams)) {
+        for (const value of values) {
+          searchParams.append(key, value);
+        }
+      }
+    }
+
+    return baseUrl + '?' + searchParams.toString();
   }
 
   /**
@@ -172,11 +206,11 @@ export function createHereClient(config: HereClientConfig) {
    * Make request to HERE API with retry logic
    */
   async function request<T>(baseUrl: string, options: HereRequestOptions = {}): Promise<T> {
-    const { method = 'GET', params = {}, body } = options;
+    const { method = 'GET', params = {}, multiParams, body } = options;
 
     // Build URL without exposing API key in errors
-    const url = buildUrl(baseUrl, params);
-    const safeUrlForLogging = buildSafeUrlForLogging(baseUrl, params);
+    const url = buildUrl(baseUrl, params, multiParams);
+    const safeUrlForLogging = buildSafeUrlForLogging(baseUrl, params, multiParams);
 
     let lastError: Error | undefined;
 
