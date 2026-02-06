@@ -7,6 +7,7 @@ import type { MarketModel } from './types.js';
 
 /**
  * Market models for SOLO truck (solo_18t_23ep)
+ * Note: Order matters - more specific models should come first
  */
 export const SOLO_MODELS: MarketModel[] = [
   {
@@ -24,6 +25,31 @@ export const SOLO_MODELS: MarketModel[] = [
         type: 'ukFerry',
         amount: 400,
         description: 'UK ferry surcharge',
+      },
+    ],
+  },
+  // IT -> UK must come before IT -> EU (more specific first)
+  {
+    id: 'solo-it-uk',
+    name: 'SOLO IT -> UK',
+    vehicleProfileId: 'solo_18t_23ep',
+    lane: {
+      origin: 'IT',
+      destination: 'UK',
+    },
+    perKmRate: 1.2,
+    emptyFeeFlat: 200,
+    defaultMin: 2700,
+    surcharges: [
+      {
+        type: 'ukFerry',
+        amount: 400,
+        description: 'UK crossing surcharge',
+      },
+      {
+        type: 'frejusOrMontBlanc',
+        amount: 200,
+        description: 'Fréjus/Mont Blanc tunnel surcharge',
       },
     ],
   },
