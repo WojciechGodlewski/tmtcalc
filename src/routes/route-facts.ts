@@ -30,6 +30,7 @@ const ALPHA3_TO_ALPHA2: Record<string, string> = {
 
 /**
  * Convert country code to ISO alpha-2 format
+ * - Normalizes 'UK' to 'GB' (ISO standard)
  * - If already alpha-2 (2 chars), returns uppercase
  * - If alpha-3 (3 chars), converts using mapping
  * - Returns null if unknown
@@ -38,6 +39,11 @@ function toAlpha2(countryCode: string | null): string | null {
   if (!countryCode) return null;
 
   const normalized = countryCode.toUpperCase().trim();
+
+  // Special case: UK -> GB (ISO standard is GB for United Kingdom)
+  if (normalized === 'UK') {
+    return 'GB';
+  }
 
   // Already alpha-2
   if (normalized.length === 2) {
@@ -58,6 +64,16 @@ function toAlpha2(countryCode: string | null): string | null {
   // Unknown format
   console.debug(`Invalid country code format: ${countryCode}`);
   return null;
+}
+
+/**
+ * Check if a country code represents the United Kingdom
+ * Handles GB, GBR, and UK variants
+ */
+function isUkCode(countryCode: string | null): boolean {
+  if (!countryCode) return false;
+  const normalized = countryCode.toUpperCase().trim();
+  return normalized === 'GB' || normalized === 'GBR' || normalized === 'UK';
 }
 
 /**
@@ -248,6 +264,12 @@ export function createRouteFactsHandler(hereService: HereService) {
       if (originCountry) countriesSet.add(originCountry);
       if (destinationCountry) countriesSet.add(destinationCountry);
       routeFacts.geography.countriesCrossed = Array.from(countriesSet);
+
+      // Update riskFlags.isUK based on normalized country codes
+      // Check destination and all countries crossed
+      const hasUkInRoute = isUkCode(destinationCountry) ||
+        routeFacts.geography.countriesCrossed.some(isUkCode);
+      routeFacts.riskFlags.isUK = hasUkInRoute;
 
       // Build response
       const resolvedPoints: ResolvedPoints = {

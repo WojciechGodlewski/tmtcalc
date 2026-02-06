@@ -319,6 +319,117 @@ describe('Pricing Engine', () => {
     });
   });
 
+  describe('GB/UK normalization', () => {
+    it('applies UK surcharge when destinationCountry is GB (alpha-2)', () => {
+      const model = SOLO_MODELS.find((m) => m.id === 'solo-pl-eu')!;
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 800,
+        originCountry: 'POL',
+        destinationCountry: 'GB', // alpha-2 for UK
+        isUK: true,
+      });
+
+      const result = calculatePrice(model, routeFacts);
+
+      expect(result.lineItems.surcharges).toHaveLength(1);
+      expect(result.lineItems.surcharges[0].type).toBe('ukFerry');
+      expect(result.finalPrice).toBe(1400); // (800 + 200) * 1.0 + 400
+    });
+
+    it('applies UK surcharge when destinationCountry is UK (variant)', () => {
+      const model = SOLO_MODELS.find((m) => m.id === 'solo-pl-eu')!;
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 800,
+        originCountry: 'POL',
+        destinationCountry: 'UK', // UK variant (non-ISO but common)
+        isUK: true,
+      });
+
+      const result = calculatePrice(model, routeFacts);
+
+      expect(result.lineItems.surcharges).toHaveLength(1);
+      expect(result.lineItems.surcharges[0].type).toBe('ukFerry');
+      expect(result.finalPrice).toBe(1400);
+    });
+
+    it('applies UK surcharge when GBR is in countriesCrossed', () => {
+      const model = SOLO_MODELS.find((m) => m.id === 'solo-pl-eu')!;
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 800,
+        originCountry: 'POL',
+        destinationCountry: 'IRL', // Ireland
+        countriesCrossed: ['POL', 'DEU', 'FRA', 'GBR', 'IRL'],
+        isUK: false, // Not set via riskFlags but should detect via countries
+      });
+
+      // isUKRoute checks countries crossed
+      const result = calculatePrice(model, routeFacts);
+
+      expect(result.lineItems.surcharges).toHaveLength(1);
+      expect(result.lineItems.surcharges[0].type).toBe('ukFerry');
+    });
+
+    it('applies UK surcharge when GB is in countriesCrossed', () => {
+      const model = SOLO_MODELS.find((m) => m.id === 'solo-pl-eu')!;
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 800,
+        originCountry: 'POL',
+        destinationCountry: 'IRL',
+        countriesCrossed: ['POL', 'DEU', 'FRA', 'GB', 'IRL'],
+        isUK: false,
+      });
+
+      const result = calculatePrice(model, routeFacts);
+
+      expect(result.lineItems.surcharges).toHaveLength(1);
+      expect(result.lineItems.surcharges[0].type).toBe('ukFerry');
+    });
+
+    it('applies UK minimum 2700 for IT->GB route', () => {
+      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-eu')!;
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 1000,
+        originCountry: 'ITA',
+        destinationCountry: 'GB', // alpha-2
+        isUK: true,
+      });
+
+      const result = calculatePrice(model, routeFacts);
+
+      // 1000 * 1.2 + 200 + 400 = 1800 < 2700 UK min
+      expect(result.finalPrice).toBe(2700);
+    });
+
+    it('applies UK minimum 2700 for IT->UK route (variant)', () => {
+      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-eu')!;
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 1000,
+        originCountry: 'ITA',
+        destinationCountry: 'UK', // UK variant
+        isUK: true,
+      });
+
+      const result = calculatePrice(model, routeFacts);
+
+      expect(result.finalPrice).toBe(2700);
+    });
+
+    it('detects UK via riskFlags.isUK even without UK in destination', () => {
+      const model = SOLO_MODELS.find((m) => m.id === 'solo-pl-eu')!;
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 800,
+        originCountry: 'POL',
+        destinationCountry: 'FRA', // Not UK
+        isUK: true, // But riskFlags says UK route (e.g., transit)
+      });
+
+      const result = calculatePrice(model, routeFacts);
+
+      expect(result.lineItems.surcharges).toHaveLength(1);
+      expect(result.lineItems.surcharges[0].type).toBe('ukFerry');
+    });
+  });
+
   describe('edge cases', () => {
     it('handles zero distance', () => {
       const model = SOLO_MODELS.find((m) => m.id === 'solo-pl-eu')!;
