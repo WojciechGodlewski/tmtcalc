@@ -467,17 +467,17 @@ describe('POST /api/route-facts', () => {
       expect(mockHereService.reverseGeocode).toHaveBeenCalledWith(52.4064, 16.9252);
       expect(mockHereService.reverseGeocode).toHaveBeenCalledWith(45.4384, 10.9916);
 
-      // Verify country codes are populated
-      expect(body.routeFacts.geography.originCountry).toBe('POL');
-      expect(body.routeFacts.geography.destinationCountry).toBe('ITA');
+      // Verify country codes are normalized to alpha-2 in routeFacts
+      expect(body.routeFacts.geography.originCountry).toBe('PL');
+      expect(body.routeFacts.geography.destinationCountry).toBe('IT');
       expect(body.routeFacts.geography.isInternational).toBe(true);
       expect(body.routeFacts.geography.isEU).toBe(true);
 
-      // Verify countries are in countriesCrossed
-      expect(body.routeFacts.geography.countriesCrossed).toContain('POL');
-      expect(body.routeFacts.geography.countriesCrossed).toContain('ITA');
+      // Verify countries are in countriesCrossed (alpha-2)
+      expect(body.routeFacts.geography.countriesCrossed).toContain('PL');
+      expect(body.routeFacts.geography.countriesCrossed).toContain('IT');
 
-      // Verify resolved points have country code
+      // Verify resolved points have raw country code (alpha-3 from HERE)
       expect(body.debug.resolvedPoints.origin.countryCode).toBe('POL');
       expect(body.debug.resolvedPoints.destination.countryCode).toBe('ITA');
     });
@@ -521,13 +521,13 @@ describe('POST /api/route-facts', () => {
       expect(mockHereService.geocode).toHaveBeenCalledTimes(2);
       expect(mockHereService.reverseGeocode).not.toHaveBeenCalled();
 
-      // Verify country codes are populated from geocode results
-      expect(body.routeFacts.geography.originCountry).toBe('DEU');
-      expect(body.routeFacts.geography.destinationCountry).toBe('ITA');
+      // Verify country codes are normalized to alpha-2 in routeFacts
+      expect(body.routeFacts.geography.originCountry).toBe('DE');
+      expect(body.routeFacts.geography.destinationCountry).toBe('IT');
       expect(body.routeFacts.geography.isInternational).toBe(true);
       expect(body.routeFacts.geography.isEU).toBe(true);
 
-      // Verify resolved points have country code
+      // Verify resolved points have raw country code (alpha-3 from HERE)
       expect(body.debug.resolvedPoints.origin.countryCode).toBe('DEU');
       expect(body.debug.resolvedPoints.destination.countryCode).toBe('ITA');
     });
@@ -554,9 +554,9 @@ describe('POST /api/route-facts', () => {
       expect(response.statusCode).toBe(200);
       const body = response.json();
 
-      // UK is not in EU (post-Brexit), France is
-      expect(body.routeFacts.geography.originCountry).toBe('GBR');
-      expect(body.routeFacts.geography.destinationCountry).toBe('FRA');
+      // UK is not in EU (post-Brexit), France is - codes normalized to alpha-2
+      expect(body.routeFacts.geography.originCountry).toBe('GB');
+      expect(body.routeFacts.geography.destinationCountry).toBe('FR');
       expect(body.routeFacts.geography.isInternational).toBe(true);
       expect(body.routeFacts.geography.isEU).toBe(false);
     });
@@ -583,8 +583,9 @@ describe('POST /api/route-facts', () => {
       expect(response.statusCode).toBe(200);
       const body = response.json();
 
-      expect(body.routeFacts.geography.originCountry).toBe('DEU');
-      expect(body.routeFacts.geography.destinationCountry).toBe('DEU');
+      // Codes normalized to alpha-2
+      expect(body.routeFacts.geography.originCountry).toBe('DE');
+      expect(body.routeFacts.geography.destinationCountry).toBe('DE');
       expect(body.routeFacts.geography.isInternational).toBe(false);
       expect(body.routeFacts.geography.isEU).toBe(true);
     });
