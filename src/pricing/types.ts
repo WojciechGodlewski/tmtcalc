@@ -23,6 +23,7 @@ export interface Lane {
 export type SurchargeType =
   | 'ukFerry'
   | 'frejusOrMontBlanc'
+  | 'alpsTunnel'
   | 'alpineTunnel'
   | 'weekend'
   | 'unloadingAfter14'
