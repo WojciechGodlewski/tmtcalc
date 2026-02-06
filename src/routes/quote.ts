@@ -11,6 +11,53 @@ import type { RouteFacts } from '../types/route-facts.js';
 import { ApiError, toApiError, type ApiErrorResponse } from '../errors.js';
 
 /**
+ * ISO 3166-1 alpha-3 to alpha-2 country code mapping
+ */
+const ALPHA3_TO_ALPHA2: Record<string, string> = {
+  // EU member states
+  AUT: 'AT', BEL: 'BE', BGR: 'BG', HRV: 'HR', CYP: 'CY',
+  CZE: 'CZ', DNK: 'DK', EST: 'EE', FIN: 'FI', FRA: 'FR',
+  DEU: 'DE', GRC: 'GR', HUN: 'HU', IRL: 'IE', ITA: 'IT',
+  LVA: 'LV', LTU: 'LT', LUX: 'LU', MLT: 'MT', NLD: 'NL',
+  POL: 'PL', PRT: 'PT', ROU: 'RO', SVK: 'SK', SVN: 'SI',
+  ESP: 'ES', SWE: 'SE',
+  // Non-EU European countries
+  GBR: 'GB', NOR: 'NO', CHE: 'CH', ISL: 'IS', LIE: 'LI',
+  // Additional commonly used
+  UKR: 'UA', BLR: 'BY', MDA: 'MD', SRB: 'RS', MKD: 'MK',
+  ALB: 'AL', MNE: 'ME', BIH: 'BA', XKX: 'XK', AND: 'AD',
+  MCO: 'MC', SMR: 'SM', VAT: 'VA', TUR: 'TR', RUS: 'RU',
+};
+
+/**
+ * Convert country code to ISO alpha-2 format
+ */
+function toAlpha2(countryCode: string | null): string | null {
+  if (!countryCode) return null;
+  const normalized = countryCode.toUpperCase().trim();
+  if (normalized.length === 2) return normalized;
+  if (normalized.length === 3) return ALPHA3_TO_ALPHA2[normalized] ?? null;
+  return null;
+}
+
+/**
+ * EU member state country codes (ISO 3166-1 alpha-2)
+ */
+const EU_COUNTRIES = new Set([
+  'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR',
+  'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL',
+  'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE',
+]);
+
+/**
+ * Check if a country is in the EU (expects alpha-2 code)
+ */
+function isEuCountry(countryCode: string | null): boolean {
+  if (!countryCode) return false;
+  return EU_COUNTRIES.has(countryCode);
+}
+
+/**
  * Location point - either address or coordinates required
  */
 const LocationSchema = z.object({
@@ -47,6 +94,7 @@ interface ResolvedPoint {
   lat: number;
   lng: number;
   label?: string;
+  countryCode: string | null;
   source: 'provided' | 'geocoded';
 }
 
@@ -65,26 +113,32 @@ interface QuoteResponse {
 }
 
 /**
- * Resolve a location point to coordinates
+ * Resolve a location point to coordinates and country code
  */
 async function resolvePoint(
   hereService: HereService,
   location: { address?: string; lat?: number; lng?: number }
 ): Promise<ResolvedPoint> {
+  // If coordinates are provided, use reverse geocoding to get country
   if (location.lat !== undefined && location.lng !== undefined) {
+    const reverseResult = await hereService.reverseGeocode(location.lat, location.lng);
     return {
       lat: location.lat,
       lng: location.lng,
+      label: reverseResult.label || undefined,
+      countryCode: reverseResult.countryCode,
       source: 'provided',
     };
   }
 
+  // Geocode the address (includes country code)
   if (location.address) {
     const result = await hereService.geocode(location.address);
     return {
       lat: result.lat,
       lng: result.lng,
       label: result.label,
+      countryCode: result.countryCode,
       source: 'geocoded',
     };
   }
@@ -144,6 +198,36 @@ export function createQuoteHandler(hereService: HereService) {
 
       // Extract RouteFacts
       const routeFacts = extractRouteFactsFromHere(routeResult.hereResponse);
+
+      // Populate geography with country info from resolved points
+      // Convert to alpha-2 for consistent format
+      const originCountry = toAlpha2(resolvedOrigin.countryCode);
+      const destinationCountry = toAlpha2(resolvedDestination.countryCode);
+
+      routeFacts.geography.originCountry = originCountry;
+      routeFacts.geography.destinationCountry = destinationCountry;
+
+      // Determine if route is international
+      if (originCountry && destinationCountry) {
+        routeFacts.geography.isInternational = originCountry !== destinationCountry;
+      }
+
+      // Determine if route is within EU
+      if (originCountry && destinationCountry) {
+        const originIsEU = isEuCountry(originCountry);
+        const destIsEU = isEuCountry(destinationCountry);
+        routeFacts.geography.isEU = originIsEU && destIsEU;
+      }
+
+      // Normalize all countriesCrossed to alpha-2, add origin/destination
+      const countriesSet = new Set<string>();
+      for (const code of routeFacts.geography.countriesCrossed) {
+        const alpha2 = toAlpha2(code);
+        if (alpha2) countriesSet.add(alpha2);
+      }
+      if (originCountry) countriesSet.add(originCountry);
+      if (destinationCountry) countriesSet.add(destinationCountry);
+      routeFacts.geography.countriesCrossed = Array.from(countriesSet);
 
       // Calculate quote
       const quoteOptions: QuoteOptions = {

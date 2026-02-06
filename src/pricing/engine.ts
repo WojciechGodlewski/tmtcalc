@@ -10,6 +10,7 @@ import {
   type SurchargeLineItem,
   type QuoteOptions,
   countryMatchesGroup,
+  getCountryGroup,
 } from './types.js';
 import { getModelsForVehicle } from './market-models.js';
 
@@ -214,10 +215,15 @@ export function calculateQuote(
   const model = findMatchingModel(vehicleProfileId, routeFacts);
 
   if (!model) {
+    const origin = routeFacts.geography.originCountry ?? 'unknown';
+    const dest = routeFacts.geography.destinationCountry ?? 'unknown';
+    const originGroup = getCountryGroup(origin);
+    const destGroup = getCountryGroup(dest);
+
     throw new Error(
       `No pricing model found for vehicle ${vehicleProfileId} ` +
-      `from ${routeFacts.geography.originCountry ?? 'unknown'} ` +
-      `to ${routeFacts.geography.destinationCountry ?? 'unknown'}`
+      `from ${origin}${originGroup ? ` (group: ${originGroup})` : ''} ` +
+      `to ${dest}${destGroup ? ` (group: ${destGroup})` : ''}`
     );
   }
 

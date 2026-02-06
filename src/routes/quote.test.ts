@@ -60,20 +60,30 @@ function createMockRoutingResponse(options: {
 }
 
 function createMockHereService(
-  responseOptions: { tollCountries?: string[]; hasTunnel?: boolean; tunnelName?: string } = {}
+  responseOptions: {
+    tollCountries?: string[];
+    hasTunnel?: boolean;
+    tunnelName?: string;
+    originCountry?: string;
+    destinationCountry?: string;
+  } = {}
 ): HereService {
+  const {
+    originCountry = 'DEU',
+    destinationCountry = 'DEU',
+  } = responseOptions;
+
   return {
     geocode: vi.fn().mockResolvedValue({
       lat: 52.52,
       lng: 13.405,
       label: 'Berlin, Germany',
-      countryCode: 'DEU',
+      countryCode: originCountry,
       confidence: 0.95,
     }),
-    reverseGeocode: vi.fn().mockResolvedValue({
-      countryCode: 'DEU',
-      label: 'Berlin, Germany',
-    }),
+    reverseGeocode: vi.fn()
+      .mockResolvedValueOnce({ countryCode: originCountry, label: 'Origin' })
+      .mockResolvedValueOnce({ countryCode: destinationCountry, label: 'Destination' }),
     routeTruck: vi.fn().mockResolvedValue({
       hereResponse: createMockRoutingResponse(responseOptions),
     }),
@@ -120,7 +130,12 @@ describe('POST /api/quote', () => {
 
   describe('successful quotes', () => {
     it('returns quote with pricing breakdown', async () => {
-      const mockService = createMockHereService({ tollCountries: ['POL', 'DEU'] });
+      // Use PL origin to match the solo-pl-eu model
+      const mockService = createMockHereService({
+        tollCountries: ['POL', 'DEU'],
+        originCountry: 'POL',
+        destinationCountry: 'DEU',
+      });
       const app = buildApp({ hereService: mockService });
       await app.ready();
 
@@ -128,8 +143,8 @@ describe('POST /api/quote', () => {
         method: 'POST',
         url: '/api/quote',
         payload: {
-          origin: { lat: 52.52, lng: 13.405 },
-          destination: { lat: 50.06, lng: 19.94 },
+          origin: { lat: 52.23, lng: 21.01 }, // Warsaw
+          destination: { lat: 52.52, lng: 13.405 }, // Berlin
           vehicleProfileId: 'solo_18t_23ep',
         },
       });
@@ -148,73 +163,11 @@ describe('POST /api/quote', () => {
     });
 
     it('includes routeFacts in response', async () => {
-      const mockService = createMockHereService({ tollCountries: ['POL', 'DEU'] });
-      const app = buildApp({ hereService: mockService });
-      await app.ready();
-
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/quote',
-        payload: {
-          origin: { lat: 52.52, lng: 13.405 },
-          destination: { lat: 50.06, lng: 19.94 },
-          vehicleProfileId: 'solo_18t_23ep',
-        },
+      const mockService = createMockHereService({
+        tollCountries: ['POL', 'DEU'],
+        originCountry: 'POL',
+        destinationCountry: 'DEU',
       });
-
-      const body = response.json();
-
-      expect(body.routeFacts).toBeDefined();
-      expect(body.routeFacts.route.distanceKm).toBe(800);
-      expect(body.routeFacts.raw.provider).toBe('here');
-    });
-
-    it('includes debug resolvedPoints', async () => {
-      const mockService = createMockHereService({ tollCountries: ['POL', 'DEU'] });
-      const app = buildApp({ hereService: mockService });
-      await app.ready();
-
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/quote',
-        payload: {
-          origin: { lat: 52.52, lng: 13.405 },
-          destination: { lat: 50.06, lng: 19.94 },
-          vehicleProfileId: 'solo_18t_23ep',
-        },
-      });
-
-      const body = response.json();
-
-      expect(body.debug.resolvedPoints.origin.source).toBe('provided');
-      expect(body.debug.resolvedPoints.destination.source).toBe('provided');
-    });
-
-    it('accepts pricing options', async () => {
-      const mockService = createMockHereService({ tollCountries: ['POL', 'DEU'] });
-      const app = buildApp({ hereService: mockService });
-      await app.ready();
-
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/quote',
-        payload: {
-          origin: { lat: 52.52, lng: 13.405 },
-          destination: { lat: 50.06, lng: 19.94 },
-          vehicleProfileId: 'solo_18t_23ep',
-          pricingDateTime: '2024-01-15T10:00:00Z',
-          unloadingAfter14: true,
-          isWeekend: false,
-        },
-      });
-
-      expect(response.statusCode).toBe(200);
-    });
-  });
-
-  describe('pricing model selection', () => {
-    it('uses SOLO PL -> EU model for Poland origin', async () => {
-      const mockService = createMockHereService({ tollCountries: ['POL', 'DEU'] });
       const app = buildApp({ hereService: mockService });
       await app.ready();
 
@@ -228,13 +181,101 @@ describe('POST /api/quote', () => {
         },
       });
 
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+
+      expect(body.routeFacts).toBeDefined();
+      expect(body.routeFacts.route.distanceKm).toBe(800);
+      expect(body.routeFacts.raw.provider).toBe('here');
+    });
+
+    it('includes debug resolvedPoints', async () => {
+      const mockService = createMockHereService({
+        tollCountries: ['POL', 'DEU'],
+        originCountry: 'POL',
+        destinationCountry: 'DEU',
+      });
+      const app = buildApp({ hereService: mockService });
+      await app.ready();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/quote',
+        payload: {
+          origin: { lat: 52.23, lng: 21.01 }, // Warsaw
+          destination: { lat: 52.52, lng: 13.405 }, // Berlin
+          vehicleProfileId: 'solo_18t_23ep',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+
+      expect(body.debug.resolvedPoints.origin.source).toBe('provided');
+      expect(body.debug.resolvedPoints.destination.source).toBe('provided');
+    });
+
+    it('accepts pricing options', async () => {
+      const mockService = createMockHereService({
+        tollCountries: ['POL', 'DEU'],
+        originCountry: 'POL',
+        destinationCountry: 'DEU',
+      });
+      const app = buildApp({ hereService: mockService });
+      await app.ready();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/quote',
+        payload: {
+          origin: { lat: 52.23, lng: 21.01 }, // Warsaw
+          destination: { lat: 52.52, lng: 13.405 }, // Berlin
+          vehicleProfileId: 'solo_18t_23ep',
+          pricingDateTime: '2024-01-15T10:00:00Z',
+          unloadingAfter14: true,
+          isWeekend: false,
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+    });
+  });
+
+  describe('pricing model selection', () => {
+    it('uses SOLO PL -> EU model for Poland origin', async () => {
+      const mockService = createMockHereService({
+        tollCountries: ['POL', 'DEU'],
+        originCountry: 'POL',
+        destinationCountry: 'DEU',
+      });
+      const app = buildApp({ hereService: mockService });
+      await app.ready();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/quote',
+        payload: {
+          origin: { lat: 52.23, lng: 21.01 }, // Warsaw
+          destination: { lat: 52.52, lng: 13.405 }, // Berlin
+          vehicleProfileId: 'solo_18t_23ep',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
       const body = response.json();
 
       expect(body.quote.modelId).toBe('solo-pl-eu');
+      // Verify country codes are in routeFacts (normalized to alpha-2)
+      expect(body.routeFacts.geography.originCountry).toBe('PL');
+      expect(body.routeFacts.geography.destinationCountry).toBe('DE');
     });
 
     it('uses SOLO IT -> EU model for Italy origin', async () => {
-      const mockService = createMockHereService({ tollCountries: ['ITA', 'DEU'] });
+      const mockService = createMockHereService({
+        tollCountries: ['ITA', 'DEU'],
+        originCountry: 'ITA',
+        destinationCountry: 'DEU',
+      });
       const app = buildApp({ hereService: mockService });
       await app.ready();
 
@@ -248,14 +289,23 @@ describe('POST /api/quote', () => {
         },
       });
 
+      expect(response.statusCode).toBe(200);
       const body = response.json();
 
       expect(body.quote.modelId).toBe('solo-it-eu');
+      // Verify country codes are in routeFacts (normalized to alpha-2)
+      expect(body.routeFacts.geography.originCountry).toBe('IT');
+      expect(body.routeFacts.geography.destinationCountry).toBe('DE');
     });
 
-    it('returns 400 when no pricing model matches', async () => {
-      // Create a response with unsupported countries
-      const mockService = createMockHereService({ tollCountries: ['ESP', 'PRT'] });
+    it('returns 400 when no pricing model matches and shows actual countries', async () => {
+      // Create a response with unsupported countries (Spain -> Portugal)
+      // No model exists for ES -> PT for solo_18t_23ep
+      const mockService = createMockHereService({
+        tollCountries: ['ESP', 'PRT'],
+        originCountry: 'ESP',
+        destinationCountry: 'PRT',
+      });
       const app = buildApp({ hereService: mockService });
       await app.ready();
 
@@ -272,6 +322,10 @@ describe('POST /api/quote', () => {
       expect(response.statusCode).toBe(400);
       const body = response.json();
       expect(body.error.code).toBe('NO_MODEL_AVAILABLE');
+      // Error message should contain actual countries (alpha-2), not "unknown"
+      expect(body.error.message).toContain('ES');
+      expect(body.error.message).toContain('PT');
+      expect(body.error.message).not.toContain('unknown');
     });
   });
 
@@ -281,6 +335,8 @@ describe('POST /api/quote', () => {
         tollCountries: ['ITA', 'FRA'],
         hasTunnel: true,
         tunnelName: 'Fréjus Tunnel',
+        originCountry: 'ITA',
+        destinationCountry: 'FRA',
       });
       const app = buildApp({ hereService: mockService });
       await app.ready();
@@ -295,6 +351,7 @@ describe('POST /api/quote', () => {
         },
       });
 
+      expect(response.statusCode).toBe(200);
       const body = response.json();
 
       expect(body.quote.lineItems.surcharges.some(
