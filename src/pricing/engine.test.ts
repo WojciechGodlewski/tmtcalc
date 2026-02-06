@@ -269,6 +269,126 @@ describe('Pricing Engine', () => {
     });
   });
 
+  describe('SOLO IT -> UK pricing', () => {
+    it('selects solo-it-uk model for IT to GB route', () => {
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 1500,
+        originCountry: 'ITA',
+        destinationCountry: 'GB',
+        isUK: true,
+      });
+
+      const model = findMatchingModel('solo_18t_23ep', routeFacts);
+
+      expect(model).not.toBeNull();
+      expect(model?.id).toBe('solo-it-uk');
+      expect(model?.name).toBe('SOLO IT -> UK');
+    });
+
+    it('selects solo-it-uk model for IT to UK (variant) route', () => {
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 1500,
+        originCountry: 'ITA',
+        destinationCountry: 'UK',
+        isUK: true,
+      });
+
+      const model = findMatchingModel('solo_18t_23ep', routeFacts);
+
+      expect(model).not.toBeNull();
+      expect(model?.id).toBe('solo-it-uk');
+    });
+
+    it('calculates price with UK crossing surcharge always applied', () => {
+      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-uk')!;
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 1500,
+        originCountry: 'ITA',
+        destinationCountry: 'GB',
+        isUK: true,
+      });
+
+      const result = calculatePrice(model, routeFacts);
+
+      // 1500 * 1.2 + 200 + 400 (UK surcharge) = 2400 < 2700 min
+      expect(result.lineItems.kmCharge).toBe(1800);
+      expect(result.lineItems.emptiesCharge).toBe(200);
+      expect(result.lineItems.surcharges).toHaveLength(1);
+      expect(result.lineItems.surcharges[0].type).toBe('ukFerry');
+      expect(result.lineItems.surcharges[0].amount).toBe(400);
+    });
+
+    it('applies minimum 2700 EUR for short routes', () => {
+      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-uk')!;
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 1000,
+        originCountry: 'ITA',
+        destinationCountry: 'GB',
+        isUK: true,
+      });
+
+      const result = calculatePrice(model, routeFacts);
+
+      // 1000 * 1.2 + 200 + 400 = 1800 < 2700 min
+      const subtotal = 1200 + 200 + 400;
+      expect(result.lineItems.minimumAdjustment).toBe(2700 - subtotal);
+      expect(result.finalPrice).toBe(2700);
+    });
+
+    it('does not apply minimum when price exceeds 2700', () => {
+      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-uk')!;
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 2500, // Long route
+        originCountry: 'ITA',
+        destinationCountry: 'GB',
+        isUK: true,
+      });
+
+      const result = calculatePrice(model, routeFacts);
+
+      // 2500 * 1.2 + 200 + 400 = 3600 > 2700
+      expect(result.lineItems.minimumAdjustment).toBeNull();
+      expect(result.finalPrice).toBe(3600);
+    });
+
+    it('adds Fréjus tunnel surcharge on top of UK surcharge', () => {
+      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-uk')!;
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 2000,
+        originCountry: 'ITA',
+        destinationCountry: 'GB',
+        isUK: true,
+        hasTunnel: true,
+        tunnels: [{ name: 'Fréjus Tunnel', category: 'alpine', country: 'FRA/ITA' }],
+      });
+
+      const result = calculatePrice(model, routeFacts);
+
+      // 2000 * 1.2 + 200 + 400 (UK) + 200 (tunnel) = 3200
+      expect(result.lineItems.surcharges).toHaveLength(2);
+      expect(result.lineItems.surcharges.some((s) => s.type === 'ukFerry')).toBe(true);
+      expect(result.lineItems.surcharges.some((s) => s.type === 'frejusOrMontBlanc')).toBe(true);
+      expect(result.finalPrice).toBe(3200);
+    });
+
+    it('calculates quote for Verona->London route', () => {
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 1400, // Approximate Verona to London
+        originCountry: 'IT',
+        destinationCountry: 'GB',
+        isUK: true,
+      });
+
+      const result = calculateQuote('solo_18t_23ep', routeFacts);
+
+      expect(result.modelId).toBe('solo-it-uk');
+      expect(result.modelName).toBe('SOLO IT -> UK');
+      // 1400 * 1.2 + 200 + 400 = 2280 < 2700 min
+      expect(result.finalPrice).toBe(2700);
+      expect(result.currency).toBe('EUR');
+    });
+  });
+
   describe('calculateQuote', () => {
     it('calculates quote for valid route', () => {
       const routeFacts = createTestRouteFacts({
