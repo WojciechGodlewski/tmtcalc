@@ -67,7 +67,10 @@ function createMockHereService(): HereService {
         maskedUrl: 'https://router.hereapi.com/v8/routes?transportMode=truck&origin=52.52,13.405&destination=52.2297,21.0122',
         via: [],
         viaCount: 0,
-        actionsSample: ['Head east on A115'],
+        sectionsCount: 1,
+        actionsCountTotal: 1,
+        spansCountTotal: 0,
+        samples: ['action:instruction:Head east on A115'],
       },
     }),
     clearGeocodeCache: vi.fn(),
@@ -475,7 +478,10 @@ describe('POST /api/route-facts', () => {
           maskedUrl: 'https://router.hereapi.com/v8/routes?transportMode=truck&origin=45.0703,7.6869&destination=45.5646,5.9178&via=45.0505%2C6.7333!passThrough%3Dtrue',
           via: [{ lat: 45.0505, lng: 6.7333 }],
           viaCount: 1,
-          actionsSample: ['Head west on A32'],
+          sectionsCount: 1,
+          actionsCountTotal: 1,
+          spansCountTotal: 0,
+          samples: ['action:instruction:Head west on A32'],
         },
       });
 
@@ -504,8 +510,11 @@ describe('POST /api/route-facts', () => {
 
       // Verify hereResponse debug info
       expect(body.debug.hereResponse).toBeDefined();
-      expect(body.debug.hereResponse.actionsSample).toBeDefined();
-      expect(Array.isArray(body.debug.hereResponse.actionsSample)).toBe(true);
+      expect(body.debug.hereResponse.sectionsCount).toBe(1);
+      expect(body.debug.hereResponse.actionsCountTotal).toBe(1);
+      expect(body.debug.hereResponse.spansCountTotal).toBe(0);
+      expect(body.debug.hereResponse.samples).toBeDefined();
+      expect(Array.isArray(body.debug.hereResponse.samples)).toBe(true);
     });
 
     it('accepts via as an alias for waypoints', async () => {
@@ -527,7 +536,10 @@ describe('POST /api/route-facts', () => {
           maskedUrl: 'https://router.hereapi.com/v8/routes?via=51.5%2C14.5!passThrough%3Dtrue',
           via: [{ lat: 51.5, lng: 14.5 }],
           viaCount: 1,
-          actionsSample: [],
+          sectionsCount: 1,
+          actionsCountTotal: 0,
+          spansCountTotal: 0,
+          samples: [],
         },
       });
 

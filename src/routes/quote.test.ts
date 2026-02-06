@@ -76,11 +76,11 @@ function createMockHereService(
   } = responseOptions;
 
   const mockResponse = createMockRoutingResponse(responseOptions);
-  const actionsSample: string[] = [];
+  const samples: string[] = [];
   if (mockResponse.routes[0]?.sections[0]?.actions) {
     for (const action of mockResponse.routes[0].sections[0].actions) {
       if (action.instruction) {
-        actionsSample.push(action.instruction);
+        samples.push(`action:instruction:${action.instruction}`);
       }
     }
   }
@@ -102,7 +102,10 @@ function createMockHereService(
         maskedUrl: 'https://router.hereapi.com/v8/routes?transportMode=truck&origin=52.52,13.405&destination=45.46,9.19',
         via: [],
         viaCount: 0,
-        actionsSample,
+        sectionsCount: 1,
+        actionsCountTotal: mockResponse.routes[0]?.sections[0]?.actions?.length ?? 0,
+        spansCountTotal: 0,
+        samples,
       },
     }),
     clearGeocodeCache: vi.fn(),

@@ -24,7 +24,11 @@ export interface RouteDebugInfo {
   maskedUrl: string;
   via: Array<{ lat: number; lng: number }>;
   viaCount: number;
-  actionsSample: string[];
+  sectionsCount: number;
+  actionsCountTotal: number;
+  spansCountTotal: number;
+  /** Combined samples from actions and spans for debugging tunnel detection */
+  samples: string[];
 }
 
 export interface RouteTruckResult {
@@ -50,6 +54,7 @@ export interface HereRouteSection {
   summary: HereRouteSummary;
   transport: HereTransport;
   actions?: HereRouteAction[];
+  spans?: HereRouteSpan[];
   tolls?: HereTollInfo[];
   notices?: HereNotice[];
 }
@@ -88,6 +93,41 @@ export interface HereRouteAction {
   offset: number;
   direction?: string;
   severity?: string;
+  /** Road name when present (e.g., for enter/continue actions) */
+  currentRoad?: { name?: string[] };
+  /** Next road name when present (e.g., for turn actions) */
+  nextRoad?: { name?: string[] };
+}
+
+/**
+ * HERE Routing API v8 Span
+ * Spans contain detailed road segment info including tunnel indicators
+ */
+export interface HereRouteSpan {
+  /** Offset index in polyline */
+  offset: number;
+  /** Road names for this span */
+  names?: Array<{ value: string; language?: string }>;
+  /** Length in meters */
+  length?: number;
+  /** Dynamic speed info */
+  dynamicSpeedInfo?: { baseSpeed: number; trafficSpeed: number };
+  /** Segment reference */
+  segmentRef?: string;
+  /** Functional class */
+  functionalClass?: number;
+  /** Route numbers (e.g., "A32", "E70") */
+  routeNumbers?: string[];
+  /** Speed limit */
+  speedLimit?: number;
+  /** Maximum speed */
+  maxSpeed?: number;
+  /** Country code */
+  countryCode?: string;
+  /** Indicates if span is a tunnel */
+  tunnel?: boolean;
+  /** Street category attributes */
+  streetAttributes?: string[];
 }
 
 export interface HereTollInfo {
@@ -154,12 +194,45 @@ function buildMaskedUrl(
 }
 
 /**
- * Collect action strings from HERE response for tunnel detection debug
- * Returns up to 20 strings from actions[].instruction
+ * Collect debug telemetry counts from HERE response
  */
-function collectActionsSample(response: HereRoutingResponse): string[] {
+function collectTelemetryCounts(response: HereRoutingResponse): {
+  sectionsCount: number;
+  actionsCountTotal: number;
+  spansCountTotal: number;
+} {
+  let sectionsCount = 0;
+  let actionsCountTotal = 0;
+  let spansCountTotal = 0;
+
+  if (!response.routes || response.routes.length === 0) {
+    return { sectionsCount, actionsCountTotal, spansCountTotal };
+  }
+
+  for (const route of response.routes) {
+    if (!route.sections) continue;
+    sectionsCount += route.sections.length;
+
+    for (const section of route.sections) {
+      if (section.actions) {
+        actionsCountTotal += section.actions.length;
+      }
+      if (section.spans) {
+        spansCountTotal += section.spans.length;
+      }
+    }
+  }
+
+  return { sectionsCount, actionsCountTotal, spansCountTotal };
+}
+
+/**
+ * Collect sample strings from HERE response for tunnel detection debug
+ * Returns up to 30 strings from actions and spans
+ */
+function collectSamples(response: HereRoutingResponse): string[] {
   const sample: string[] = [];
-  const MAX_SAMPLE = 20;
+  const MAX_SAMPLE = 30;
 
   if (!response.routes || response.routes.length === 0) {
     return sample;
@@ -169,18 +242,62 @@ function collectActionsSample(response: HereRoutingResponse): string[] {
     if (!route.sections) continue;
 
     for (const section of route.sections) {
-      if (!section.actions) continue;
+      // Collect from actions
+      if (section.actions) {
+        for (const action of section.actions) {
+          if (sample.length >= MAX_SAMPLE) break;
 
-      for (const action of section.actions) {
-        if (sample.length >= MAX_SAMPLE) break;
+          // Collect instruction text
+          if (action.instruction) {
+            sample.push(`action:instruction:${action.instruction}`);
+          }
 
-        // Collect instruction text
-        if (action.instruction) {
-          sample.push(action.instruction);
+          // Collect road names from actions
+          if (action.currentRoad?.name) {
+            for (const name of action.currentRoad.name) {
+              if (sample.length >= MAX_SAMPLE) break;
+              sample.push(`action:currentRoad:${name}`);
+            }
+          }
+          if (action.nextRoad?.name) {
+            for (const name of action.nextRoad.name) {
+              if (sample.length >= MAX_SAMPLE) break;
+              sample.push(`action:nextRoad:${name}`);
+            }
+          }
         }
       }
 
-      if (sample.length >= MAX_SAMPLE) break;
+      // Collect from spans
+      if (section.spans) {
+        for (const span of section.spans) {
+          if (sample.length >= MAX_SAMPLE) break;
+
+          // Collect span names
+          if (span.names) {
+            for (const nameObj of span.names) {
+              if (sample.length >= MAX_SAMPLE) break;
+              if (nameObj.value) {
+                sample.push(`span:name:${nameObj.value}`);
+              }
+            }
+          }
+
+          // Note if span is a tunnel (even without name)
+          if (span.tunnel) {
+            const tunnelInfo = span.names?.[0]?.value || 'unnamed';
+            sample.push(`span:tunnel:${tunnelInfo}`);
+          }
+
+          // Collect route numbers
+          if (span.routeNumbers) {
+            for (const routeNum of span.routeNumbers) {
+              if (sample.length >= MAX_SAMPLE) break;
+              sample.push(`span:routeNumber:${routeNum}`);
+            }
+          }
+        }
+      }
     }
 
     if (sample.length >= MAX_SAMPLE) break;
@@ -215,7 +332,7 @@ export function createTruckRouter(client: HereClient) {
       transportMode: 'truck',
       origin: formatCoords(origin),
       destination: formatCoords(destination),
-      return: 'summary,tolls,polyline,actions',
+      return: 'summary,tolls,polyline,spans,actions',
       // Vehicle dimensions (in cm) and weight (in kg)
       'vehicle[grossWeight]': profile.grossWeight,
       'vehicle[height]': profile.heightCm,
@@ -239,8 +356,9 @@ export function createTruckRouter(client: HereClient) {
       multiParams: Object.keys(multiParams).length > 0 ? multiParams : undefined,
     });
 
-    // Collect actions sample for debug
-    const actionsSample = collectActionsSample(response);
+    // Collect telemetry for debug
+    const telemetry = collectTelemetryCounts(response);
+    const samples = collectSamples(response);
 
     return {
       hereResponse: response,
@@ -248,7 +366,10 @@ export function createTruckRouter(client: HereClient) {
         maskedUrl,
         via: waypoints,
         viaCount: waypoints.length,
-        actionsSample,
+        sectionsCount: telemetry.sectionsCount,
+        actionsCountTotal: telemetry.actionsCountTotal,
+        spansCountTotal: telemetry.spansCountTotal,
+        samples,
       },
     };
   }

@@ -129,7 +129,10 @@ interface HereRequestDebug {
 }
 
 interface HereResponseDebug {
-  actionsSample: string[];
+  sectionsCount: number;
+  actionsCountTotal: number;
+  spansCountTotal: number;
+  samples: string[];
 }
 
 interface QuoteResponse {
@@ -294,7 +297,10 @@ export function createQuoteHandler(hereService: HereService) {
             viaCount: routeResult.debug.viaCount,
           },
           hereResponse: {
-            actionsSample: routeResult.debug.actionsSample,
+            sectionsCount: routeResult.debug.sectionsCount,
+            actionsCountTotal: routeResult.debug.actionsCountTotal,
+            spansCountTotal: routeResult.debug.spansCountTotal,
+            samples: routeResult.debug.samples,
           },
         },
       };
