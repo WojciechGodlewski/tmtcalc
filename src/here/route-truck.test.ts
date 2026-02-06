@@ -252,7 +252,7 @@ describe('TruckRouter', () => {
       expect(viaParams[1]).toBe('52,17!passThrough=true');
     });
 
-    it('returns debug info with viaCount and maskedUrl', async () => {
+    it('returns debug info with viaCount, maskedUrl, and telemetry', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => mockRoutingResponse,
@@ -273,11 +273,15 @@ describe('TruckRouter', () => {
       expect(result.debug.via).toEqual([{ lat: 51.5, lng: 14.5 }]);
       expect(result.debug.maskedUrl).toContain('via=51.5%2C14.5');
       expect(result.debug.maskedUrl).not.toContain('apiKey');
-      expect(result.debug.actionsSample).toBeDefined();
-      expect(Array.isArray(result.debug.actionsSample)).toBe(true);
+      // New telemetry fields
+      expect(result.debug.sectionsCount).toBe(1);
+      expect(result.debug.actionsCountTotal).toBe(2);
+      expect(result.debug.spansCountTotal).toBe(0); // No spans in mock
+      expect(result.debug.samples).toBeDefined();
+      expect(Array.isArray(result.debug.samples)).toBe(true);
     });
 
-    it('returns actionsSample from HERE response actions', async () => {
+    it('returns samples from HERE response actions', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => mockRoutingResponse,
@@ -289,12 +293,60 @@ describe('TruckRouter', () => {
         vehicleProfileId: 'ftl_13_6_33ep',
       });
 
-      // Should have collected action instructions
-      expect(result.debug.actionsSample).toContain('Head east on Unter den Linden');
-      expect(result.debug.actionsSample).toContain('Turn right onto A10');
+      // Should have collected action instructions as samples
+      const instructionSamples = result.debug.samples.filter(s => s.startsWith('action:instruction:'));
+      expect(instructionSamples).toContainEqual('action:instruction:Head east on Unter den Linden');
+      expect(instructionSamples).toContainEqual('action:instruction:Turn right onto A10');
     });
 
-    it('requests required return fields', async () => {
+    it('collects samples from spans when present', async () => {
+      const responseWithSpans = {
+        routes: [{
+          id: 'route-1',
+          sections: [{
+            id: 'section-1',
+            type: 'vehicle',
+            departure: { time: '2024-01-15T10:00:00+01:00', place: { type: 'place', location: { lat: 45.07, lng: 7.69 } } },
+            arrival: { time: '2024-01-15T16:30:00+01:00', place: { type: 'place', location: { lat: 45.56, lng: 5.92 } } },
+            summary: { duration: 23400, length: 150000, baseDuration: 21600 },
+            transport: { mode: 'truck' },
+            actions: [
+              { action: 'depart', duration: 0, length: 0, instruction: 'Head west on A32', offset: 0 },
+            ],
+            spans: [
+              { offset: 0, names: [{ value: 'A32' }], routeNumbers: ['A32'] },
+              { offset: 5, names: [{ value: 'Tunnel du Fréjus' }], tunnel: true },
+              { offset: 10, names: [{ value: 'A43' }], routeNumbers: ['A43'] },
+            ],
+          }],
+        }],
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => responseWithSpans,
+      });
+
+      const result = await router.routeTruck({
+        origin: { lat: 45.07, lng: 7.69 },
+        destination: { lat: 45.56, lng: 5.92 },
+        vehicleProfileId: 'solo_18t_23ep',
+      });
+
+      expect(result.debug.spansCountTotal).toBe(3);
+
+      // Should include span names and tunnel indicator
+      const spanNameSamples = result.debug.samples.filter(s => s.startsWith('span:name:'));
+      expect(spanNameSamples).toContainEqual('span:name:A32');
+      expect(spanNameSamples).toContainEqual('span:name:Tunnel du Fréjus');
+      expect(spanNameSamples).toContainEqual('span:name:A43');
+
+      // Should include tunnel indicator
+      const tunnelSamples = result.debug.samples.filter(s => s.startsWith('span:tunnel:'));
+      expect(tunnelSamples).toContainEqual('span:tunnel:Tunnel du Fréjus');
+    });
+
+    it('requests required return fields including spans', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => mockRoutingResponse,
@@ -311,6 +363,7 @@ describe('TruckRouter', () => {
       expect(returnFields).toContain('summary');
       expect(returnFields).toContain('tolls');
       expect(returnFields).toContain('polyline'); // Required when requesting actions
+      expect(returnFields).toContain('spans'); // For tunnel detection
       expect(returnFields).toContain('actions');
       // Note: 'notices' is not a valid return type in HERE Routing v8
       expect(returnFields).not.toContain('notices');

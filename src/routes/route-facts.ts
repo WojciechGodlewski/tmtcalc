@@ -150,7 +150,10 @@ interface HereRequestDebug {
 }
 
 interface HereResponseDebug {
-  actionsSample: string[];
+  sectionsCount: number;
+  actionsCountTotal: number;
+  spansCountTotal: number;
+  samples: string[];
 }
 
 interface RouteFactsResponse {
@@ -309,7 +312,10 @@ export function createRouteFactsHandler(hereService: HereService) {
             viaCount: routeResult.debug.viaCount,
           },
           hereResponse: {
-            actionsSample: routeResult.debug.actionsSample,
+            sectionsCount: routeResult.debug.sectionsCount,
+            actionsCountTotal: routeResult.debug.actionsCountTotal,
+            spansCountTotal: routeResult.debug.spansCountTotal,
+            samples: routeResult.debug.samples,
           },
         },
       };

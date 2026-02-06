@@ -12,6 +12,7 @@ import type {
   HereRoutingResponse,
   HereRouteSection,
   HereRouteAction,
+  HereRouteSpan,
   HereNotice,
   HereToll,
 } from './route-truck.js';
@@ -297,44 +298,168 @@ function extractFerryInfo(sections: HereRouteSection[]): {
 }
 
 /**
- * Extract tunnel information from sections
+ * Check if a tunnel name matches Frejus or Mont Blanc (Alps surcharge tunnels)
+ */
+function isAlpsSurchargeTunnel(tunnelName: string | null): boolean {
+  if (!tunnelName) return false;
+
+  const normalized = normalizeForMatching(tunnelName);
+
+  // Fréjus patterns
+  if (
+    normalized.includes('frejus') ||
+    normalized.includes('traforo del frejus') ||
+    normalized.includes('tunnel du frejus') ||
+    normalized.includes('galleria del frejus')
+  ) {
+    return true;
+  }
+
+  // Mont Blanc patterns
+  if (
+    normalized.includes('mont blanc') ||
+    normalized.includes('mont-blanc') ||
+    normalized.includes('montblanc') ||
+    normalized.includes('monte bianco') ||
+    normalized.includes('traforo del monte bianco')
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Extract tunnel info from a span
+ */
+function extractTunnelFromSpan(span: HereRouteSpan): Tunnel | null {
+  // Check if span is marked as tunnel
+  if (!span.tunnel) {
+    return null;
+  }
+
+  // Try to get tunnel name from span names
+  let tunnelName: string | null = null;
+  if (span.names && span.names.length > 0) {
+    tunnelName = span.names[0].value || null;
+  }
+
+  // If we have a name, try to match known tunnels
+  if (tunnelName) {
+    const normalizedName = normalizeForMatching(tunnelName);
+
+    for (const [pattern, tunnelInfo] of Object.entries(KNOWN_TUNNELS)) {
+      if (normalizedName.includes(pattern)) {
+        return {
+          name: tunnelInfo.name,
+          category: tunnelInfo.category,
+          country: tunnelInfo.country,
+        };
+      }
+    }
+
+    // Return tunnel with detected name but unknown category
+    return {
+      name: tunnelName,
+      category: null,
+      country: span.countryCode || null,
+    };
+  }
+
+  // Tunnel without name
+  return {
+    name: null,
+    category: null,
+    country: span.countryCode || null,
+  };
+}
+
+/**
+ * Extract tunnel information from sections using spans (primary) and actions (secondary)
  */
 function extractTunnels(sections: HereRouteSection[]): {
   hasTunnel: boolean;
   tunnels: Tunnel[];
+  /** Set to true only if Frejus or Mont Blanc tunnel detected */
+  hasAlpsSurchargeTunnel: boolean;
 } {
   const tunnels: Tunnel[] = [];
   const seenTunnels = new Set<string>();
+  let hasAlpsSurchargeTunnel = false;
+  let hasUnnamedTunnel = false;
 
   for (const section of sections) {
-    // Check actions for tunnel mentions
-    for (const action of asArray<HereRouteAction>(section.actions)) {
-      const tunnel = extractTunnelFromText(action.instruction);
+    // PRIMARY: Check spans for tunnel indicators
+    for (const span of asArray<HereRouteSpan>(section.spans)) {
+      const tunnel = extractTunnelFromSpan(span);
       if (tunnel) {
-        const key = tunnel.name || 'unnamed';
-        if (!seenTunnels.has(key)) {
-          seenTunnels.add(key);
-          tunnels.push(tunnel);
+        const key = tunnel.name || 'unnamed-span';
+
+        if (tunnel.name) {
+          // Check if this is an Alps surcharge tunnel
+          if (isAlpsSurchargeTunnel(tunnel.name)) {
+            hasAlpsSurchargeTunnel = true;
+          }
+
+          if (!seenTunnels.has(key)) {
+            seenTunnels.add(key);
+            tunnels.push(tunnel);
+          }
+        } else {
+          // Unnamed tunnel from span - just note we have a tunnel
+          hasUnnamedTunnel = true;
         }
       }
     }
 
-    // Check notices for tunnel mentions
+    // SECONDARY: Check actions for tunnel mentions
+    for (const action of asArray<HereRouteAction>(section.actions)) {
+      const tunnel = extractTunnelFromText(action.instruction);
+      if (tunnel) {
+        const key = tunnel.name || 'unnamed-action';
+
+        if (tunnel.name) {
+          // Check if this is an Alps surcharge tunnel
+          if (isAlpsSurchargeTunnel(tunnel.name)) {
+            hasAlpsSurchargeTunnel = true;
+          }
+
+          if (!seenTunnels.has(key)) {
+            seenTunnels.add(key);
+            tunnels.push(tunnel);
+          }
+        }
+      }
+    }
+
+    // SECONDARY: Check notices for tunnel mentions
     for (const notice of asArray<HereNotice>(section.notices)) {
       const tunnel = extractTunnelFromText(notice.title);
       if (tunnel) {
-        const key = tunnel.name || 'unnamed';
-        if (!seenTunnels.has(key)) {
-          seenTunnels.add(key);
-          tunnels.push(tunnel);
+        const key = tunnel.name || 'unnamed-notice';
+
+        if (tunnel.name) {
+          // Check if this is an Alps surcharge tunnel
+          if (isAlpsSurchargeTunnel(tunnel.name)) {
+            hasAlpsSurchargeTunnel = true;
+          }
+
+          if (!seenTunnels.has(key)) {
+            seenTunnels.add(key);
+            tunnels.push(tunnel);
+          }
         }
       }
     }
   }
 
+  // hasTunnel is true if we found any named tunnels OR any unnamed tunnels from spans
+  const hasTunnel = tunnels.length > 0 || hasUnnamedTunnel;
+
   return {
-    hasTunnel: tunnels.length > 0,
+    hasTunnel,
     tunnels,
+    hasAlpsSurchargeTunnel,
   };
 }
 
@@ -394,12 +519,13 @@ function extractRestrictions(sections: HereRouteSection[]): {
 
 /**
  * Compute risk flags based on countries and route characteristics
+ * @param hasAlpsSurchargeTunnel - True only if Frejus or Mont Blanc tunnel detected
  */
 function computeRiskFlags(
   countriesCrossed: string[],
   destinationCountry: string | null,
   hasFerry: boolean,
-  tunnels: Tunnel[]
+  hasAlpsSurchargeTunnel: boolean
 ): {
   isUK: boolean;
   isIsland: boolean;
@@ -421,13 +547,10 @@ function computeRiskFlags(
   // Check for Baltic
   const hasBaltic = allCountries.some(isBaltic);
 
-  // Check for Alps crossing
-  let crossesAlps = allCountries.some(isAlpsCountry);
-
-  // Also check for alpine tunnels
-  if (!crossesAlps) {
-    crossesAlps = tunnels.some((t) => t.category === 'alpine');
-  }
+  // crossesAlps is TRUE only when Frejus or Mont Blanc tunnel is detected
+  // This is used for the +200 EUR Alps surcharge
+  // Other tunnels (even alpine ones) do NOT trigger the surcharge
+  const crossesAlps = hasAlpsSurchargeTunnel;
 
   // Island detection: ferry + destination is island country
   const destIsIsland = destinationCountry ? isIslandCountry(destinationCountry) : false;
@@ -540,12 +663,12 @@ export function extractRouteFactsFromHere(hereResponse: HereRoutingResponse): Ro
   // Compute geography
   const isInternational = countriesCrossed.length > 1 ? true : countriesCrossed.length === 1 ? false : null;
 
-  // Compute risk flags
+  // Compute risk flags - crossesAlps only true for Frejus/Mont Blanc
   const riskFlags = computeRiskFlags(
     countriesCrossed,
     destinationCountry,
     ferryInfo.hasFerry,
-    tunnelInfo.tunnels
+    tunnelInfo.hasAlpsSurchargeTunnel
   );
 
   return {
