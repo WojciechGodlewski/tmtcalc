@@ -71,6 +71,30 @@ function createMockHereService(): HereService {
         actionsCountTotal: 1,
         polylinePointsChecked: 0,
         alpsMatch: { frejus: false, montBlanc: false },
+        alpsMatchDetails: {
+          frejus: { matched: false, pointsInside: 0 },
+          montBlanc: { matched: false, pointsInside: 0 },
+        },
+        alpsConfig: {
+          centers: {
+            frejus: { lat: 45.086, lng: 6.706 },
+            montBlanc: { lat: 45.924, lng: 6.968 },
+          },
+          bboxes: {
+            frejus: { minLat: 45.03, maxLat: 45.17, minLng: 6.60, maxLng: 6.78 },
+            montBlanc: { minLat: 45.82, maxLat: 45.96, minLng: 6.92, maxLng: 7.03 },
+          },
+        },
+        alpsCenterDistances: {
+          frejus: { fromOrigin: 1000, fromWaypoints: [], fromDestination: 1200 },
+          montBlanc: { fromOrigin: 950, fromWaypoints: [], fromDestination: 1100 },
+        },
+        polylineSanity: {
+          polylineBounds: null,
+          polylineFirstPoint: null,
+          polylineLastPoint: null,
+          pointCount: 0,
+        },
         samples: ['action:instruction:Head east on A115'],
       },
     }),
@@ -483,6 +507,30 @@ describe('POST /api/route-facts', () => {
           actionsCountTotal: 1,
           polylinePointsChecked: 0,
           alpsMatch: { frejus: false, montBlanc: false },
+          alpsMatchDetails: {
+            frejus: { matched: false, pointsInside: 0 },
+            montBlanc: { matched: false, pointsInside: 0 },
+          },
+          alpsConfig: {
+            centers: {
+              frejus: { lat: 45.086, lng: 6.706 },
+              montBlanc: { lat: 45.924, lng: 6.968 },
+            },
+            bboxes: {
+              frejus: { minLat: 45.03, maxLat: 45.17, minLng: 6.60, maxLng: 6.78 },
+              montBlanc: { minLat: 45.82, maxLat: 45.96, minLng: 6.92, maxLng: 7.03 },
+            },
+          },
+          alpsCenterDistances: {
+            frejus: { fromOrigin: 70, fromWaypoints: [1.5], fromDestination: 82 },
+            montBlanc: { fromOrigin: 100, fromWaypoints: [95], fromDestination: 50 },
+          },
+          polylineSanity: {
+            polylineBounds: null,
+            polylineFirstPoint: null,
+            polylineLastPoint: null,
+            pointCount: 0,
+          },
           samples: ['action:instruction:Head west on A32'],
         },
       });
@@ -543,6 +591,30 @@ describe('POST /api/route-facts', () => {
           actionsCountTotal: 0,
           polylinePointsChecked: 0,
           alpsMatch: { frejus: false, montBlanc: false },
+          alpsMatchDetails: {
+            frejus: { matched: false, pointsInside: 0 },
+            montBlanc: { matched: false, pointsInside: 0 },
+          },
+          alpsConfig: {
+            centers: {
+              frejus: { lat: 45.086, lng: 6.706 },
+              montBlanc: { lat: 45.924, lng: 6.968 },
+            },
+            bboxes: {
+              frejus: { minLat: 45.03, maxLat: 45.17, minLng: 6.60, maxLng: 6.78 },
+              montBlanc: { minLat: 45.82, maxLat: 45.96, minLng: 6.92, maxLng: 7.03 },
+            },
+          },
+          alpsCenterDistances: {
+            frejus: { fromOrigin: 1000, fromWaypoints: [900], fromDestination: 1200 },
+            montBlanc: { fromOrigin: 950, fromWaypoints: [850], fromDestination: 1100 },
+          },
+          polylineSanity: {
+            polylineBounds: null,
+            polylineFirstPoint: null,
+            polylineLastPoint: null,
+            pointCount: 0,
+          },
           samples: [],
         },
       });

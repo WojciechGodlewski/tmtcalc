@@ -106,6 +106,30 @@ function createMockHereService(
         actionsCountTotal: mockResponse.routes[0]?.sections[0]?.actions?.length ?? 0,
         polylinePointsChecked: 0,
         alpsMatch: { frejus: false, montBlanc: false },
+        alpsMatchDetails: {
+          frejus: { matched: false, pointsInside: 0 },
+          montBlanc: { matched: false, pointsInside: 0 },
+        },
+        alpsConfig: {
+          centers: {
+            frejus: { lat: 45.086, lng: 6.706 },
+            montBlanc: { lat: 45.924, lng: 6.968 },
+          },
+          bboxes: {
+            frejus: { minLat: 45.03, maxLat: 45.17, minLng: 6.60, maxLng: 6.78 },
+            montBlanc: { minLat: 45.82, maxLat: 45.96, minLng: 6.92, maxLng: 7.03 },
+          },
+        },
+        alpsCenterDistances: {
+          frejus: { fromOrigin: 1000, fromWaypoints: [], fromDestination: 1200 },
+          montBlanc: { fromOrigin: 950, fromWaypoints: [], fromDestination: 1100 },
+        },
+        polylineSanity: {
+          polylineBounds: null,
+          polylineFirstPoint: null,
+          polylineLastPoint: null,
+          pointCount: 0,
+        },
         samples,
       },
     }),
