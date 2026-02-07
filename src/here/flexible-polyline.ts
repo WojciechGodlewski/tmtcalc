@@ -157,6 +157,38 @@ export const MONT_BLANC_BBOX: BoundingBox = {
 };
 
 /**
+ * Tunnel center points for distance-based fallback detection
+ * These are approximate center coordinates of the tunnel corridors
+ */
+export const FREJUS_CENTER: PolylinePoint = {
+  lat: 45.10,  // Approximate center latitude
+  lng: 6.69,   // Approximate center longitude
+};
+
+export const MONT_BLANC_CENTER: PolylinePoint = {
+  lat: 45.89,  // Approximate center latitude
+  lng: 6.975,  // Approximate center longitude
+};
+
+/** Distance threshold in km for fallback detection */
+export const TUNNEL_PROXIMITY_KM = 3.0;
+
+/**
+ * Calculate haversine distance between two points in kilometers
+ */
+export function haversineDistanceKm(p1: PolylinePoint, p2: PolylinePoint): number {
+  const R = 6371; // Earth's radius in km
+  const dLat = (p2.lat - p1.lat) * Math.PI / 180;
+  const dLng = (p2.lng - p1.lng) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(p1.lat * Math.PI / 180) * Math.cos(p2.lat * Math.PI / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+/**
  * Check if a point is inside a bounding box
  */
 export function isPointInBBox(point: PolylinePoint, bbox: BoundingBox): boolean {
@@ -169,44 +201,125 @@ export function isPointInBBox(point: PolylinePoint, bbox: BoundingBox): boolean 
 }
 
 /**
+ * Detailed match info for a single tunnel
+ */
+export interface TunnelMatchDetails {
+  /** True if matched by bbox or proximity */
+  matched: boolean;
+  /** Number of points inside bbox */
+  pointsInside: number;
+  /** First point inside bbox (if any) */
+  firstPoint?: PolylinePoint;
+  /** True if matched by proximity fallback */
+  matchedByProximity?: boolean;
+  /** Closest distance to tunnel center in km (if checked) */
+  closestDistanceKm?: number;
+}
+
+/**
  * Result of checking polyline against alpine tunnel bounding boxes
  */
 export interface AlpsTunnelCheckResult {
-  /** True if any point is in Frejus bbox */
+  /** True if any point is in Frejus bbox or within proximity */
   frejus: boolean;
-  /** True if any point is in Mont Blanc bbox */
+  /** True if any point is in Mont Blanc bbox or within proximity */
   montBlanc: boolean;
   /** Total number of points checked */
   pointsChecked: number;
+  /** Detailed match info for each tunnel */
+  details: {
+    frejus: TunnelMatchDetails;
+    montBlanc: TunnelMatchDetails;
+  };
 }
 
 /**
  * Check if any polyline points fall within alpine tunnel bounding boxes
+ * Uses bbox check as primary, distance-to-center as fallback
  *
  * @param points Array of decoded polyline points
- * @returns Object indicating which tunnels the route passes through
+ * @returns Object indicating which tunnels the route passes through with detailed diagnostics
  */
 export function checkAlpsTunnels(points: PolylinePoint[]): AlpsTunnelCheckResult {
-  let frejus = false;
-  let montBlanc = false;
+  // Initialize detailed tracking
+  const frejusDetails: TunnelMatchDetails = {
+    matched: false,
+    pointsInside: 0,
+    closestDistanceKm: undefined,
+  };
+
+  const montBlancDetails: TunnelMatchDetails = {
+    matched: false,
+    pointsInside: 0,
+    closestDistanceKm: undefined,
+  };
+
+  // Track closest distances for proximity fallback
+  let frejusMinDist = Infinity;
+  let montBlancMinDist = Infinity;
+  let frejusClosestPoint: PolylinePoint | undefined;
+  let montBlancClosestPoint: PolylinePoint | undefined;
 
   for (const point of points) {
-    if (!frejus && isPointInBBox(point, FREJUS_BBOX)) {
-      frejus = true;
+    // Check Frejus bbox
+    if (isPointInBBox(point, FREJUS_BBOX)) {
+      frejusDetails.pointsInside++;
+      if (!frejusDetails.firstPoint) {
+        frejusDetails.firstPoint = { lat: point.lat, lng: point.lng };
+      }
     }
-    if (!montBlanc && isPointInBBox(point, MONT_BLANC_BBOX)) {
-      montBlanc = true;
+
+    // Check Mont Blanc bbox
+    if (isPointInBBox(point, MONT_BLANC_BBOX)) {
+      montBlancDetails.pointsInside++;
+      if (!montBlancDetails.firstPoint) {
+        montBlancDetails.firstPoint = { lat: point.lat, lng: point.lng };
+      }
     }
-    // Early exit if both found
-    if (frejus && montBlanc) {
-      break;
+
+    // Calculate distances for proximity fallback
+    const frejusDist = haversineDistanceKm(point, FREJUS_CENTER);
+    if (frejusDist < frejusMinDist) {
+      frejusMinDist = frejusDist;
+      frejusClosestPoint = point;
+    }
+
+    const montBlancDist = haversineDistanceKm(point, MONT_BLANC_CENTER);
+    if (montBlancDist < montBlancMinDist) {
+      montBlancMinDist = montBlancDist;
+      montBlancClosestPoint = point;
     }
   }
 
+  // Set closest distances
+  frejusDetails.closestDistanceKm = frejusMinDist === Infinity ? undefined : Math.round(frejusMinDist * 100) / 100;
+  montBlancDetails.closestDistanceKm = montBlancMinDist === Infinity ? undefined : Math.round(montBlancMinDist * 100) / 100;
+
+  // Determine matches: bbox first, then proximity fallback
+  if (frejusDetails.pointsInside > 0) {
+    frejusDetails.matched = true;
+  } else if (frejusMinDist <= TUNNEL_PROXIMITY_KM) {
+    frejusDetails.matched = true;
+    frejusDetails.matchedByProximity = true;
+    frejusDetails.firstPoint = frejusClosestPoint;
+  }
+
+  if (montBlancDetails.pointsInside > 0) {
+    montBlancDetails.matched = true;
+  } else if (montBlancMinDist <= TUNNEL_PROXIMITY_KM) {
+    montBlancDetails.matched = true;
+    montBlancDetails.matchedByProximity = true;
+    montBlancDetails.firstPoint = montBlancClosestPoint;
+  }
+
   return {
-    frejus,
-    montBlanc,
+    frejus: frejusDetails.matched,
+    montBlanc: montBlancDetails.matched,
     pointsChecked: points.length,
+    details: {
+      frejus: frejusDetails,
+      montBlanc: montBlancDetails,
+    },
   };
 }
 

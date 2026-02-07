@@ -9,6 +9,7 @@ import {
   decodeFlexiblePolyline,
   checkAlpsTunnels,
   type AlpsTunnelCheckResult,
+  type TunnelMatchDetails,
 } from './flexible-polyline.js';
 
 const ROUTING_API_URL = 'https://router.hereapi.com/v8/routes';
@@ -37,6 +38,11 @@ export interface RouteDebugInfo {
   alpsMatch: {
     frejus: boolean;
     montBlanc: boolean;
+  };
+  /** Detailed Alps tunnel match diagnostics */
+  alpsMatchDetails: {
+    frejus: TunnelMatchDetails;
+    montBlanc: TunnelMatchDetails;
   };
   /** Sample strings from actions for debugging */
   samples: string[];
@@ -235,16 +241,32 @@ function collectTelemetryCounts(response: HereRoutingResponse): {
 }
 
 /**
+ * Empty tunnel match details for when no polyline points are checked
+ */
+const EMPTY_TUNNEL_DETAILS: TunnelMatchDetails = {
+  matched: false,
+  pointsInside: 0,
+};
+
+/**
  * Check all section polylines for Alps tunnel bbox matches
+ * Aggregates all polyline points and checks them together for accurate details
  */
 function checkPolylineForAlpsTunnels(response: HereRoutingResponse): AlpsTunnelCheckResult {
-  let totalPointsChecked = 0;
-  let frejusMatch = false;
-  let montBlancMatch = false;
-
   if (!response.routes || response.routes.length === 0) {
-    return { frejus: false, montBlanc: false, pointsChecked: 0 };
+    return {
+      frejus: false,
+      montBlanc: false,
+      pointsChecked: 0,
+      details: {
+        frejus: { ...EMPTY_TUNNEL_DETAILS },
+        montBlanc: { ...EMPTY_TUNNEL_DETAILS },
+      },
+    };
   }
+
+  // Aggregate all polyline points from all sections
+  const allPoints: Array<{ lat: number; lng: number }> = [];
 
   for (const route of response.routes) {
     if (!route.sections) continue;
@@ -254,80 +276,162 @@ function checkPolylineForAlpsTunnels(response: HereRoutingResponse): AlpsTunnelC
 
       try {
         const points = decodeFlexiblePolyline(section.polyline);
-        const result = checkAlpsTunnels(points);
-
-        totalPointsChecked += result.pointsChecked;
-        if (result.frejus) frejusMatch = true;
-        if (result.montBlanc) montBlancMatch = true;
-
-        // Early exit if both found
-        if (frejusMatch && montBlancMatch) {
-          return {
-            frejus: true,
-            montBlanc: true,
-            pointsChecked: totalPointsChecked,
-          };
-        }
+        allPoints.push(...points);
       } catch {
         // Ignore polyline decode errors, continue with other sections
       }
     }
   }
 
-  return {
-    frejus: frejusMatch,
-    montBlanc: montBlancMatch,
-    pointsChecked: totalPointsChecked,
-  };
+  if (allPoints.length === 0) {
+    return {
+      frejus: false,
+      montBlanc: false,
+      pointsChecked: 0,
+      details: {
+        frejus: { ...EMPTY_TUNNEL_DETAILS },
+        montBlanc: { ...EMPTY_TUNNEL_DETAILS },
+      },
+    };
+  }
+
+  // Check all points together for accurate aggregate details
+  return checkAlpsTunnels(allPoints);
+}
+
+/**
+ * Safely extract string from various HERE action field formats
+ * Handles: string, { text: string }, array of strings, etc.
+ */
+function extractStringValue(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim();
+  }
+  if (value && typeof value === 'object') {
+    // Handle { text: string } format
+    const objValue = value as Record<string, unknown>;
+    if (typeof objValue.text === 'string' && objValue.text.trim()) {
+      return objValue.text.trim();
+    }
+    // Handle { value: string } format
+    if (typeof objValue.value === 'string' && objValue.value.trim()) {
+      return objValue.value.trim();
+    }
+    // Handle { name: string } format
+    if (typeof objValue.name === 'string' && objValue.name.trim()) {
+      return objValue.name.trim();
+    }
+  }
+  return null;
+}
+
+/**
+ * Extract array of strings from various HERE field formats
+ * Handles: string[], { name: string[] }, etc.
+ */
+function extractStringArray(value: unknown): string[] {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    const results: string[] = [];
+    for (const item of value) {
+      const str = extractStringValue(item);
+      if (str) results.push(str);
+    }
+    return results;
+  }
+
+  if (typeof value === 'object') {
+    const objValue = value as Record<string, unknown>;
+    // Handle { name: string[] } format
+    if (Array.isArray(objValue.name)) {
+      return extractStringArray(objValue.name);
+    }
+    // Handle single string in object
+    const str = extractStringValue(value);
+    if (str) return [str];
+  }
+
+  const str = extractStringValue(value);
+  return str ? [str] : [];
 }
 
 /**
  * Collect sample strings from HERE response for debugging
- * Returns up to 30 strings from actions
+ * Returns up to 30 strings from actions, checking various field paths
  */
 function collectSamples(response: HereRoutingResponse): string[] {
-  const sample: string[] = [];
+  const samples: string[] = [];
   const MAX_SAMPLE = 30;
 
   if (!response.routes || response.routes.length === 0) {
-    return sample;
+    return samples;
   }
 
   for (const route of response.routes) {
     if (!route.sections) continue;
 
     for (const section of route.sections) {
-      // Collect from actions
-      if (section.actions) {
-        for (const action of section.actions) {
-          if (sample.length >= MAX_SAMPLE) break;
+      if (!section.actions) continue;
 
-          // Collect instruction text
-          if (action.instruction) {
-            sample.push(`action:instruction:${action.instruction}`);
-          }
+      for (const action of section.actions) {
+        if (samples.length >= MAX_SAMPLE) break;
 
-          // Collect road names from actions
-          if (action.currentRoad?.name) {
-            for (const name of action.currentRoad.name) {
-              if (sample.length >= MAX_SAMPLE) break;
-              sample.push(`action:currentRoad:${name}`);
-            }
-          }
-          if (action.nextRoad?.name) {
-            for (const name of action.nextRoad.name) {
-              if (sample.length >= MAX_SAMPLE) break;
-              sample.push(`action:nextRoad:${name}`);
-            }
-          }
+        // Cast to any to access potentially undocumented fields
+        const actionAny = action as Record<string, unknown>;
+
+        // Try various instruction field paths
+        const instructionStr = extractStringValue(actionAny.instruction);
+        if (instructionStr) {
+          samples.push(`action:instruction:${instructionStr}`);
+        }
+
+        // Try action.text field
+        const textStr = extractStringValue(actionAny.text);
+        if (textStr && samples.length < MAX_SAMPLE) {
+          samples.push(`action:text:${textStr}`);
+        }
+
+        // Try action.roadName field
+        const roadNameStr = extractStringValue(actionAny.roadName);
+        if (roadNameStr && samples.length < MAX_SAMPLE) {
+          samples.push(`action:roadName:${roadNameStr}`);
+        }
+
+        // Try action.street field
+        const streetStr = extractStringValue(actionAny.street);
+        if (streetStr && samples.length < MAX_SAMPLE) {
+          samples.push(`action:street:${streetStr}`);
+        }
+
+        // Try action.name field
+        const nameStr = extractStringValue(actionAny.name);
+        if (nameStr && samples.length < MAX_SAMPLE) {
+          samples.push(`action:name:${nameStr}`);
+        }
+
+        // Try currentRoad field (various formats)
+        const currentRoadStrs = extractStringArray(actionAny.currentRoad);
+        for (const str of currentRoadStrs) {
+          if (samples.length >= MAX_SAMPLE) break;
+          samples.push(`action:currentRoad:${str}`);
+        }
+
+        // Try nextRoad field (various formats)
+        const nextRoadStrs = extractStringArray(actionAny.nextRoad);
+        for (const str of nextRoadStrs) {
+          if (samples.length >= MAX_SAMPLE) break;
+          samples.push(`action:nextRoad:${str}`);
         }
       }
+
+      if (samples.length >= MAX_SAMPLE) break;
     }
 
-    if (sample.length >= MAX_SAMPLE) break;
+    if (samples.length >= MAX_SAMPLE) break;
   }
 
-  return sample;
+  return samples;
 }
 
 /**
@@ -398,6 +502,7 @@ export function createTruckRouter(client: HereClient) {
           frejus: alpsCheck.frejus,
           montBlanc: alpsCheck.montBlanc,
         },
+        alpsMatchDetails: alpsCheck.details,
         samples,
       },
     };
