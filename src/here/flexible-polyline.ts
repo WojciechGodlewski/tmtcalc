@@ -238,19 +238,100 @@ export const MONT_BLANC_BBOX: BoundingBox = {
 /**
  * Tunnel center points for distance-based fallback detection
  * These are approximate center coordinates of the tunnel corridors
+ * Fréjus: between Bardonecchia (IT) and Modane (FR)
+ * Mont Blanc: between Courmayeur (IT) and Chamonix (FR)
  */
 export const FREJUS_CENTER: PolylinePoint = {
-  lat: 45.10,  // Approximate center latitude
-  lng: 6.69,   // Approximate center longitude
+  lat: 45.086,  // Tunnel center latitude
+  lng: 6.706,   // Tunnel center longitude
 };
 
 export const MONT_BLANC_CENTER: PolylinePoint = {
-  lat: 45.89,  // Approximate center latitude
-  lng: 6.975,  // Approximate center longitude
+  lat: 45.924,  // Tunnel center latitude (corrected - was 45.89)
+  lng: 6.968,   // Tunnel center longitude
 };
 
 /** Distance threshold in km for fallback detection */
 export const TUNNEL_PROXIMITY_KM = 3.0;
+
+/**
+ * Debug info for Alps tunnel detection configuration
+ * Exposes the exact centers and bboxes being used
+ */
+export interface AlpsDebugConfig {
+  centers: {
+    frejus: { lat: number; lng: number };
+    montBlanc: { lat: number; lng: number };
+  };
+  bboxes: {
+    frejus: { minLat: number; maxLat: number; minLng: number; maxLng: number };
+    montBlanc: { minLat: number; maxLat: number; minLng: number; maxLng: number };
+  };
+}
+
+/**
+ * Get the Alps tunnel detection configuration for debugging
+ */
+export function getAlpsDebugConfig(): AlpsDebugConfig {
+  return {
+    centers: {
+      frejus: { lat: FREJUS_CENTER.lat, lng: FREJUS_CENTER.lng },
+      montBlanc: { lat: MONT_BLANC_CENTER.lat, lng: MONT_BLANC_CENTER.lng },
+    },
+    bboxes: {
+      frejus: {
+        minLat: FREJUS_BBOX.minLat,
+        maxLat: FREJUS_BBOX.maxLat,
+        minLng: FREJUS_BBOX.minLng,
+        maxLng: FREJUS_BBOX.maxLng,
+      },
+      montBlanc: {
+        minLat: MONT_BLANC_BBOX.minLat,
+        maxLat: MONT_BLANC_BBOX.maxLat,
+        minLng: MONT_BLANC_BBOX.minLng,
+        maxLng: MONT_BLANC_BBOX.maxLng,
+      },
+    },
+  };
+}
+
+/**
+ * Compute distances from given points to tunnel centers
+ * Used for debugging to verify coordinate handling
+ */
+export interface AlpsCenterDistances {
+  frejus: {
+    fromOrigin?: number;
+    fromWaypoints: number[];
+    fromDestination?: number;
+  };
+  montBlanc: {
+    fromOrigin?: number;
+    fromWaypoints: number[];
+    fromDestination?: number;
+  };
+}
+
+export function computeAlpsCenterDistances(
+  origin: PolylinePoint | null,
+  waypoints: PolylinePoint[],
+  destination: PolylinePoint | null
+): AlpsCenterDistances {
+  const roundDist = (d: number) => Math.round(d * 100) / 100;
+
+  return {
+    frejus: {
+      fromOrigin: origin ? roundDist(haversineDistanceKm(origin, FREJUS_CENTER)) : undefined,
+      fromWaypoints: waypoints.map((wp) => roundDist(haversineDistanceKm(wp, FREJUS_CENTER))),
+      fromDestination: destination ? roundDist(haversineDistanceKm(destination, FREJUS_CENTER)) : undefined,
+    },
+    montBlanc: {
+      fromOrigin: origin ? roundDist(haversineDistanceKm(origin, MONT_BLANC_CENTER)) : undefined,
+      fromWaypoints: waypoints.map((wp) => roundDist(haversineDistanceKm(wp, MONT_BLANC_CENTER))),
+      fromDestination: destination ? roundDist(haversineDistanceKm(destination, MONT_BLANC_CENTER)) : undefined,
+    },
+  };
+}
 
 /**
  * Calculate haversine distance between two points in kilometers
