@@ -300,6 +300,98 @@ describe('TruckRouter', () => {
       expect(instructionSamples).toContainEqual('action:instruction:Turn right onto A10');
     });
 
+    it('collects samples from various action field formats', async () => {
+      // Response with actions using various field formats
+      const responseWithVariedFields = {
+        routes: [{
+          id: 'route-1',
+          sections: [{
+            id: 'section-1',
+            type: 'vehicle',
+            departure: { time: '2024-01-15T10:00:00+01:00', place: { type: 'place', location: { lat: 52.52, lng: 13.405 } } },
+            arrival: { time: '2024-01-15T16:30:00+01:00', place: { type: 'place', location: { lat: 52.23, lng: 21.01 } } },
+            summary: { duration: 23400, length: 574000, baseDuration: 21600 },
+            transport: { mode: 'truck' },
+            actions: [
+              // Standard instruction string
+              { action: 'depart', instruction: 'Start on Main St', duration: 0, length: 0, offset: 0 },
+              // instruction as object with text property
+              { action: 'turn', instruction: { text: 'Turn left on Oak Ave' }, duration: 60, length: 500, offset: 1 },
+              // roadName field
+              { action: 'continue', instruction: 'Continue straight', roadName: 'Highway 101', duration: 300, length: 5000, offset: 2 },
+              // currentRoad with name array
+              { action: 'enter', instruction: 'Enter motorway', currentRoad: { name: ['A32', 'E70'] }, duration: 120, length: 2000, offset: 3 },
+              // nextRoad field
+              { action: 'turn', instruction: 'Turn onto exit', nextRoad: { name: ['Exit 15B'] }, duration: 60, length: 800, offset: 4 },
+              // street field
+              { action: 'arrive', instruction: 'Arrive at destination', street: 'Destination Blvd', duration: 0, length: 0, offset: 5 },
+              // name field
+              { action: 'pass', instruction: 'Pass landmark', name: 'City Center', duration: 30, length: 200, offset: 6 },
+              // text field directly on action
+              { action: 'notice', text: 'Toll road ahead', duration: 0, length: 0, offset: 7 },
+            ],
+          }],
+        }],
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => responseWithVariedFields,
+      });
+
+      const result = await router.routeTruck({
+        origin: { lat: 52.52, lng: 13.405 },
+        destination: { lat: 52.23, lng: 21.01 },
+        vehicleProfileId: 'ftl_13_6_33ep',
+      });
+
+      const samples = result.debug.samples;
+
+      // Should extract from standard instruction
+      expect(samples).toContainEqual('action:instruction:Start on Main St');
+      // Should extract from instruction.text object format
+      expect(samples).toContainEqual('action:instruction:Turn left on Oak Ave');
+      // Should extract roadName
+      expect(samples).toContainEqual('action:roadName:Highway 101');
+      // Should extract currentRoad names
+      expect(samples).toContainEqual('action:currentRoad:A32');
+      expect(samples).toContainEqual('action:currentRoad:E70');
+      // Should extract nextRoad names
+      expect(samples).toContainEqual('action:nextRoad:Exit 15B');
+      // Should extract street
+      expect(samples).toContainEqual('action:street:Destination Blvd');
+      // Should extract name field
+      expect(samples).toContainEqual('action:name:City Center');
+      // Should extract text field
+      expect(samples).toContainEqual('action:text:Toll road ahead');
+    });
+
+    it('returns alpsMatchDetails with detailed diagnostics', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockRoutingResponse,
+      });
+
+      const result = await router.routeTruck({
+        origin: { lat: 52.52, lng: 13.405 },
+        destination: { lat: 52.2297, lng: 21.0122 },
+        vehicleProfileId: 'ftl_13_6_33ep',
+      });
+
+      // alpsMatchDetails should be present
+      expect(result.debug.alpsMatchDetails).toBeDefined();
+      expect(result.debug.alpsMatchDetails.frejus).toBeDefined();
+      expect(result.debug.alpsMatchDetails.montBlanc).toBeDefined();
+
+      // Each detail should have the expected structure
+      const frejusDetails = result.debug.alpsMatchDetails.frejus;
+      expect(typeof frejusDetails.matched).toBe('boolean');
+      expect(typeof frejusDetails.pointsInside).toBe('number');
+      // Optional fields may be undefined
+      expect(frejusDetails.matchedByProximity === undefined || typeof frejusDetails.matchedByProximity === 'boolean').toBe(true);
+      expect(frejusDetails.closestDistanceKm === undefined || typeof frejusDetails.closestDistanceKm === 'number').toBe(true);
+    });
+
     it('detects Alps tunnels via polyline bbox checking', async () => {
       // Create a simple encoded polyline that passes through Frejus bbox
       // Frejus bbox: lat 45.03-45.17, lng 6.60-6.78

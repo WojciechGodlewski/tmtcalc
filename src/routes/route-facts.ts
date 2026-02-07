@@ -149,6 +149,14 @@ interface HereRequestDebug {
   viaCount: number;
 }
 
+interface TunnelMatchDetail {
+  matched: boolean;
+  pointsInside: number;
+  firstPoint?: { lat: number; lng: number };
+  matchedByProximity?: boolean;
+  closestDistanceKm?: number;
+}
+
 interface HereResponseDebug {
   sectionsCount: number;
   actionsCountTotal: number;
@@ -156,6 +164,10 @@ interface HereResponseDebug {
   alpsMatch: {
     frejus: boolean;
     montBlanc: boolean;
+  };
+  alpsMatchDetails: {
+    frejus: TunnelMatchDetail;
+    montBlanc: TunnelMatchDetail;
   };
   samples: string[];
 }
@@ -320,6 +332,7 @@ export function createRouteFactsHandler(hereService: HereService) {
             actionsCountTotal: routeResult.debug.actionsCountTotal,
             polylinePointsChecked: routeResult.debug.polylinePointsChecked,
             alpsMatch: routeResult.debug.alpsMatch,
+            alpsMatchDetails: routeResult.debug.alpsMatchDetails,
             samples: routeResult.debug.samples,
           },
         },

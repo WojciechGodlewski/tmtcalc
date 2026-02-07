@@ -307,35 +307,35 @@ function extractFerryInfo(sections: HereRouteSection[]): {
  * Primary detection method for Frejus/Mont Blanc tunnels
  */
 function checkPolylinesForAlpsTunnels(sections: HereRouteSection[]): AlpsTunnelCheckResult {
-  let totalPointsChecked = 0;
-  let frejusMatch = false;
-  let montBlancMatch = false;
+  // Aggregate all section polyline points for a single check
+  const allPoints: Array<{ lat: number; lng: number }> = [];
 
   for (const section of sections) {
     if (!section.polyline) continue;
 
     try {
       const points = decodeFlexiblePolyline(section.polyline);
-      const result = checkAlpsTunnels(points);
-
-      totalPointsChecked += result.pointsChecked;
-      if (result.frejus) frejusMatch = true;
-      if (result.montBlanc) montBlancMatch = true;
-
-      // Early exit if both found
-      if (frejusMatch && montBlancMatch) {
-        break;
-      }
+      allPoints.push(...points);
     } catch {
       // Ignore polyline decode errors, continue with other sections
     }
   }
 
-  return {
-    frejus: frejusMatch,
-    montBlanc: montBlancMatch,
-    pointsChecked: totalPointsChecked,
-  };
+  // If no points, return empty result
+  if (allPoints.length === 0) {
+    return {
+      frejus: false,
+      montBlanc: false,
+      pointsChecked: 0,
+      details: {
+        frejus: { matched: false, pointsInside: 0 },
+        montBlanc: { matched: false, pointsInside: 0 },
+      },
+    };
+  }
+
+  // Single comprehensive check of all points
+  return checkAlpsTunnels(allPoints);
 }
 
 /**
