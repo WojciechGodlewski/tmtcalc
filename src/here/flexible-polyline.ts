@@ -20,10 +20,11 @@ const DECODING_TABLE = [
 ];
 
 /**
- * Decode a single signed value from the polyline at the given index
+ * Decode a single unsigned varint value from the polyline at the given index
  * Returns the decoded value and the new index position
+ * Used for header and metadata values (no zig-zag decoding)
  */
-function decodeValue(encoded: string, index: number): [number, number] {
+function decodeUnsignedValue(encoded: string, index: number): [number, number] {
   let result = 0;
   let shift = 0;
   let i = index;
@@ -49,13 +50,25 @@ function decodeValue(encoded: string, index: number): [number, number] {
     }
   }
 
+  return [result, i];
+}
+
+/**
+ * Decode a single signed value from the polyline at the given index
+ * Returns the decoded value and the new index position
+ * Uses zig-zag decoding for coordinate deltas
+ */
+function decodeSignedValue(encoded: string, index: number): [number, number] {
+  const [unsigned, nextIndex] = decodeUnsignedValue(encoded, index);
+
   // Convert from unsigned to signed using zig-zag decoding
+  let result = unsigned;
   if (result & 1) {
     result = ~result;
   }
   result >>= 1;
 
-  return [result, i];
+  return [result, nextIndex];
 }
 
 /**
@@ -72,42 +85,43 @@ export function decodeFlexiblePolyline(encoded: string): PolylinePoint[] {
 
   const points: PolylinePoint[] = [];
 
-  // Decode header
+  // Decode header (unsigned - no zig-zag)
   let index = 0;
 
-  // First value: header version and precision info
-  const [header, nextIndex] = decodeValue(encoded, index);
+  // First value: header with precision info (unsigned)
+  const [header, nextIndex] = decodeUnsignedValue(encoded, index);
   index = nextIndex;
 
   // Extract precision from header (bits 0-3)
   const precision = header & 0x0f;
   const factor = Math.pow(10, precision);
 
-  // Check if 3rd dimension is present (bit 4)
-  const has3rdDim = (header & 0x10) !== 0;
+  // Check if 3rd dimension is present (bits 4-6 encode type, 0 = absent)
+  const thirdDimType = (header >> 4) & 0x07;
+  const has3rdDim = thirdDimType !== 0;
 
-  // If 3rd dimension present, decode its precision (next value)
+  // If 3rd dimension present, decode its precision (next unsigned value)
   if (has3rdDim) {
-    const [, next] = decodeValue(encoded, index);
+    const [, next] = decodeUnsignedValue(encoded, index);
     index = next;
   }
 
-  // Decode points
+  // Decode points (signed values with zig-zag)
   let lat = 0;
   let lng = 0;
 
   while (index < encoded.length) {
-    // Decode delta lat
-    const [deltaLat, nextLat] = decodeValue(encoded, index);
+    // Decode delta lat (signed)
+    const [deltaLat, nextLat] = decodeSignedValue(encoded, index);
     index = nextLat;
 
-    // Decode delta lng
-    const [deltaLng, nextLng] = decodeValue(encoded, index);
+    // Decode delta lng (signed)
+    const [deltaLng, nextLng] = decodeSignedValue(encoded, index);
     index = nextLng;
 
-    // Skip 3rd dimension if present
+    // Skip 3rd dimension if present (signed)
     if (has3rdDim && index < encoded.length) {
-      const [, next3rd] = decodeValue(encoded, index);
+      const [, next3rd] = decodeSignedValue(encoded, index);
       index = next3rd;
     }
 
@@ -115,7 +129,7 @@ export function decodeFlexiblePolyline(encoded: string): PolylinePoint[] {
     lat += deltaLat;
     lng += deltaLng;
 
-    // Convert to actual coordinates
+    // Convert to actual coordinates (degrees)
     points.push({
       lat: lat / factor,
       lng: lng / factor,
@@ -134,6 +148,71 @@ export interface BoundingBox {
   maxLat: number;
   minLng: number;
   maxLng: number;
+}
+
+/**
+ * Polyline bounds for sanity checking decoded coordinates
+ */
+export interface PolylineBounds {
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+}
+
+/**
+ * Polyline sanity stats for debugging
+ */
+export interface PolylineSanityStats {
+  polylineBounds: PolylineBounds | null;
+  polylineFirstPoint: PolylinePoint | null;
+  polylineLastPoint: PolylinePoint | null;
+  pointCount: number;
+}
+
+/**
+ * Compute sanity stats from decoded polyline points
+ * Used for debugging to verify decoder output is plausible
+ */
+export function computePolylineSanityStats(points: PolylinePoint[]): PolylineSanityStats {
+  if (points.length === 0) {
+    return {
+      polylineBounds: null,
+      polylineFirstPoint: null,
+      polylineLastPoint: null,
+      pointCount: 0,
+    };
+  }
+
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  let minLng = Infinity;
+  let maxLng = -Infinity;
+
+  for (const point of points) {
+    if (point.lat < minLat) minLat = point.lat;
+    if (point.lat > maxLat) maxLat = point.lat;
+    if (point.lng < minLng) minLng = point.lng;
+    if (point.lng > maxLng) maxLng = point.lng;
+  }
+
+  return {
+    polylineBounds: {
+      minLat: Math.round(minLat * 100000) / 100000,
+      maxLat: Math.round(maxLat * 100000) / 100000,
+      minLng: Math.round(minLng * 100000) / 100000,
+      maxLng: Math.round(maxLng * 100000) / 100000,
+    },
+    polylineFirstPoint: {
+      lat: Math.round(points[0].lat * 100000) / 100000,
+      lng: Math.round(points[0].lng * 100000) / 100000,
+    },
+    polylineLastPoint: {
+      lat: Math.round(points[points.length - 1].lat * 100000) / 100000,
+      lng: Math.round(points[points.length - 1].lng * 100000) / 100000,
+    },
+    pointCount: points.length,
+  };
 }
 
 /**
