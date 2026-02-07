@@ -9,9 +9,13 @@ import {
   decodeFlexiblePolyline,
   checkAlpsTunnels,
   computePolylineSanityStats,
+  getAlpsDebugConfig,
+  computeAlpsCenterDistances,
   type AlpsTunnelCheckResult,
   type TunnelMatchDetails,
   type PolylineSanityStats,
+  type AlpsDebugConfig,
+  type AlpsCenterDistances,
 } from './flexible-polyline.js';
 
 const ROUTING_API_URL = 'https://router.hereapi.com/v8/routes';
@@ -46,6 +50,10 @@ export interface RouteDebugInfo {
     frejus: TunnelMatchDetails;
     montBlanc: TunnelMatchDetails;
   };
+  /** Alps tunnel detection configuration (centers and bboxes) */
+  alpsConfig: AlpsDebugConfig;
+  /** Distances from origin/waypoints/destination to tunnel centers */
+  alpsCenterDistances: AlpsCenterDistances;
   /** Sample strings from actions for debugging */
   samples: string[];
   /** Polyline sanity stats for debugging decoder output */
@@ -507,6 +515,13 @@ export function createTruckRouter(client: HereClient) {
     const polylineAnalysis = analyzePolylines(response);
     const samples = collectSamples(response);
 
+    // Compute distances from origin/waypoints/destination to tunnel centers
+    const alpsCenterDistances = computeAlpsCenterDistances(
+      origin,
+      waypoints,
+      destination
+    );
+
     return {
       hereResponse: response,
       debug: {
@@ -521,6 +536,8 @@ export function createTruckRouter(client: HereClient) {
           montBlanc: polylineAnalysis.alpsCheck.montBlanc,
         },
         alpsMatchDetails: polylineAnalysis.alpsCheck.details,
+        alpsConfig: getAlpsDebugConfig(),
+        alpsCenterDistances,
         samples,
         polylineSanity: polylineAnalysis.sanityStats,
       },
