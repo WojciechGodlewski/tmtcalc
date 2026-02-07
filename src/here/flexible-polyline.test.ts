@@ -12,11 +12,14 @@ import {
   computePolylineSanityStats,
   getAlpsDebugConfig,
   computeAlpsCenterDistances,
+  checkWaypointProximity,
+  arePolylineBoundsPlausible,
   FREJUS_BBOX,
   MONT_BLANC_BBOX,
   FREJUS_CENTER,
   MONT_BLANC_CENTER,
   TUNNEL_PROXIMITY_KM,
+  WAYPOINT_PROXIMITY_THRESHOLD_KM,
   type PolylinePoint,
 } from './flexible-polyline.js';
 
@@ -593,5 +596,134 @@ describe('computeAlpsCenterDistances', () => {
     expect(distances.frejus.fromWaypoints).toHaveLength(0);
     expect(distances.frejus.fromOrigin).toBeDefined();
     expect(distances.frejus.fromDestination).toBeDefined();
+  });
+});
+
+describe('arePolylineBoundsPlausible', () => {
+  it('returns true for bounds within Earth coordinate ranges', () => {
+    const validBounds = {
+      minLat: 45.0,
+      maxLat: 46.0,
+      minLng: 6.0,
+      maxLng: 8.0,
+    };
+    expect(arePolylineBoundsPlausible(validBounds)).toBe(true);
+  });
+
+  it('returns false for latitude outside -90 to 90', () => {
+    const invalidBounds = {
+      minLat: -91,
+      maxLat: 46.0,
+      minLng: 6.0,
+      maxLng: 8.0,
+    };
+    expect(arePolylineBoundsPlausible(invalidBounds)).toBe(false);
+  });
+
+  it('returns false for absurd bounds like those from corrupt polyline', () => {
+    // These are the absurd bounds from the bug report
+    const corruptBounds = {
+      minLat: 767993.7,
+      maxLat: 767993.8,
+      minLng: 1000000,
+      maxLng: 2000000,
+    };
+    expect(arePolylineBoundsPlausible(corruptBounds)).toBe(false);
+  });
+
+  it('returns true for edge case bounds at max valid ranges', () => {
+    const edgeBounds = {
+      minLat: -90,
+      maxLat: 90,
+      minLng: -180,
+      maxLng: 180,
+    };
+    expect(arePolylineBoundsPlausible(edgeBounds)).toBe(true);
+  });
+});
+
+describe('checkWaypointProximity', () => {
+  it('detects Frejus when waypoint is within 3km of center', () => {
+    // Bardonecchia coordinates - very close to Frejus tunnel
+    const bardonecchia: PolylinePoint = { lat: 45.07948, lng: 6.69965 };
+    const origin: PolylinePoint = { lat: 45.06235, lng: 7.67993 }; // Turin
+    const destination: PolylinePoint = { lat: 45.56628, lng: 5.91215 }; // Chambery
+
+    const result = checkWaypointProximity(origin, [bardonecchia], destination);
+
+    expect(result.frejus).toBe(true);
+    expect(result.montBlanc).toBe(false);
+    expect(result.reasons.frejus).toBe('waypointProximity');
+    expect(result.reasons.montBlanc).toBe('none');
+  });
+
+  it('does not detect Mont Blanc when waypoint is more than 3km from center', () => {
+    // Courmayeur coordinates - the proximity threshold is 3km, Courmayeur is ~14km from center
+    const courmayeur: PolylinePoint = { lat: 45.796, lng: 6.973 };
+    const origin: PolylinePoint = { lat: 45.06235, lng: 7.67993 }; // Turin
+    const destination: PolylinePoint = { lat: 45.56628, lng: 5.91215 }; // Chambery
+
+    const result = checkWaypointProximity(origin, [courmayeur], destination);
+
+    // Courmayeur is actually ~14km from Mont Blanc center, so won't match
+    expect(result.montBlanc).toBe(false);
+  });
+
+  it('detects proximity from origin when origin is within threshold', () => {
+    // Use Frejus center as origin
+    const result = checkWaypointProximity(FREJUS_CENTER, [], null);
+
+    expect(result.frejus).toBe(true);
+    expect(result.reasons.frejus).toBe('waypointProximity');
+  });
+
+  it('detects proximity from destination when destination is within threshold', () => {
+    // Use Mont Blanc center as destination
+    const result = checkWaypointProximity(null, [], MONT_BLANC_CENTER);
+
+    expect(result.montBlanc).toBe(true);
+    expect(result.reasons.montBlanc).toBe('waypointProximity');
+  });
+
+  it('returns no match when all points are far from tunnel centers', () => {
+    const paris: PolylinePoint = { lat: 48.8566, lng: 2.3522 };
+    const london: PolylinePoint = { lat: 51.5074, lng: -0.1278 };
+
+    const result = checkWaypointProximity(paris, [], london);
+
+    expect(result.frejus).toBe(false);
+    expect(result.montBlanc).toBe(false);
+    expect(result.reasons.frejus).toBe('none');
+    expect(result.reasons.montBlanc).toBe('none');
+  });
+
+  it('detects both tunnels when waypoints are close to both centers', () => {
+    const result = checkWaypointProximity(FREJUS_CENTER, [MONT_BLANC_CENTER], null);
+
+    expect(result.frejus).toBe(true);
+    expect(result.montBlanc).toBe(true);
+    expect(result.reasons.frejus).toBe('waypointProximity');
+    expect(result.reasons.montBlanc).toBe('waypointProximity');
+  });
+});
+
+describe('Waypoint proximity threshold', () => {
+  it('WAYPOINT_PROXIMITY_THRESHOLD_KM should be 3km', () => {
+    expect(WAYPOINT_PROXIMITY_THRESHOLD_KM).toBe(3.0);
+  });
+
+  it('Bardonecchia should be within 3km of Frejus center', () => {
+    const bardonecchia: PolylinePoint = { lat: 45.07948, lng: 6.69965 };
+    const distance = haversineDistanceKm(bardonecchia, FREJUS_CENTER);
+
+    expect(distance).toBeLessThan(WAYPOINT_PROXIMITY_THRESHOLD_KM);
+  });
+
+  it('Modane should be more than 3km from Frejus center', () => {
+    // Modane is the French portal town, about 13km from the actual tunnel center
+    const modane: PolylinePoint = { lat: 45.2, lng: 6.67 };
+    const distance = haversineDistanceKm(modane, FREJUS_CENTER);
+
+    expect(distance).toBeGreaterThan(WAYPOINT_PROXIMITY_THRESHOLD_KM);
   });
 });

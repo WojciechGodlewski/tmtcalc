@@ -107,8 +107,8 @@ function createMockHereService(
         polylinePointsChecked: 0,
         alpsMatch: { frejus: false, montBlanc: false },
         alpsMatchDetails: {
-          frejus: { matched: false, pointsInside: 0 },
-          montBlanc: { matched: false, pointsInside: 0 },
+          frejus: { matched: false, pointsInside: 0, matchReason: 'none' },
+          montBlanc: { matched: false, pointsInside: 0, matchReason: 'none' },
         },
         alpsConfig: {
           centers: {
@@ -130,6 +130,13 @@ function createMockHereService(
           polylineLastPoint: null,
           pointCount: 0,
         },
+        waypointProximity: {
+          frejus: false,
+          montBlanc: false,
+          reasons: { frejus: 'none', montBlanc: 'none' },
+        },
+        polylineBoundsPlausible: false,
+        alpsMatchReason: { frejus: 'none', montBlanc: 'none' },
         samples,
       },
     }),
@@ -459,7 +466,7 @@ describe('POST /api/quote', () => {
   describe('Alps debug config propagation', () => {
     it('includes alpsConfig at top level of debug', async () => {
       // Use PL origin (Poland) which has a pricing model for EU destinations
-      const mockService = createMockHereService('PL', 'IT');
+      const mockService = createMockHereService({ originCountry: 'PL', destinationCountry: 'IT' });
       // Override geocode to return proper country codes for addresses
       mockService.geocode = vi.fn()
         .mockResolvedValueOnce({ lat: 52.23, lng: 21.01, label: 'Warsaw, Poland', countryCode: 'PL' })
@@ -491,7 +498,7 @@ describe('POST /api/quote', () => {
 
     it('includes alpsCenterDistances at top level of debug', async () => {
       // Use PL origin (Poland) which has a pricing model for EU destinations
-      const mockService = createMockHereService('PL', 'IT');
+      const mockService = createMockHereService({ originCountry: 'PL', destinationCountry: 'IT' });
       // Override geocode to return proper country codes for addresses
       mockService.geocode = vi.fn()
         .mockResolvedValueOnce({ lat: 52.23, lng: 21.01, label: 'Warsaw, Poland', countryCode: 'PL' })
