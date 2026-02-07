@@ -8,8 +8,10 @@ import { getVehicleProfile, type VehicleProfileId } from './vehicle-profiles.js'
 import {
   decodeFlexiblePolyline,
   checkAlpsTunnels,
+  computePolylineSanityStats,
   type AlpsTunnelCheckResult,
   type TunnelMatchDetails,
+  type PolylineSanityStats,
 } from './flexible-polyline.js';
 
 const ROUTING_API_URL = 'https://router.hereapi.com/v8/routes';
@@ -46,6 +48,8 @@ export interface RouteDebugInfo {
   };
   /** Sample strings from actions for debugging */
   samples: string[];
+  /** Polyline sanity stats for debugging decoder output */
+  polylineSanity: PolylineSanityStats;
 }
 
 export interface RouteTruckResult {
@@ -249,12 +253,21 @@ const EMPTY_TUNNEL_DETAILS: TunnelMatchDetails = {
 };
 
 /**
+ * Result from polyline analysis including Alps check and sanity stats
+ */
+interface PolylineAnalysisResult {
+  alpsCheck: AlpsTunnelCheckResult;
+  sanityStats: PolylineSanityStats;
+}
+
+/**
  * Check all section polylines for Alps tunnel bbox matches
  * Aggregates all polyline points and checks them together for accurate details
+ * Also computes sanity stats for debugging
  */
-function checkPolylineForAlpsTunnels(response: HereRoutingResponse): AlpsTunnelCheckResult {
-  if (!response.routes || response.routes.length === 0) {
-    return {
+function analyzePolylines(response: HereRoutingResponse): PolylineAnalysisResult {
+  const emptyResult: PolylineAnalysisResult = {
+    alpsCheck: {
       frejus: false,
       montBlanc: false,
       pointsChecked: 0,
@@ -262,7 +275,17 @@ function checkPolylineForAlpsTunnels(response: HereRoutingResponse): AlpsTunnelC
         frejus: { ...EMPTY_TUNNEL_DETAILS },
         montBlanc: { ...EMPTY_TUNNEL_DETAILS },
       },
-    };
+    },
+    sanityStats: {
+      polylineBounds: null,
+      polylineFirstPoint: null,
+      polylineLastPoint: null,
+      pointCount: 0,
+    },
+  };
+
+  if (!response.routes || response.routes.length === 0) {
+    return emptyResult;
   }
 
   // Aggregate all polyline points from all sections
@@ -284,19 +307,14 @@ function checkPolylineForAlpsTunnels(response: HereRoutingResponse): AlpsTunnelC
   }
 
   if (allPoints.length === 0) {
-    return {
-      frejus: false,
-      montBlanc: false,
-      pointsChecked: 0,
-      details: {
-        frejus: { ...EMPTY_TUNNEL_DETAILS },
-        montBlanc: { ...EMPTY_TUNNEL_DETAILS },
-      },
-    };
+    return emptyResult;
   }
 
   // Check all points together for accurate aggregate details
-  return checkAlpsTunnels(allPoints);
+  return {
+    alpsCheck: checkAlpsTunnels(allPoints),
+    sanityStats: computePolylineSanityStats(allPoints),
+  };
 }
 
 /**
@@ -377,8 +395,8 @@ function collectSamples(response: HereRoutingResponse): string[] {
       for (const action of section.actions) {
         if (samples.length >= MAX_SAMPLE) break;
 
-        // Cast to any to access potentially undocumented fields
-        const actionAny = action as Record<string, unknown>;
+        // Cast to Record to access potentially undocumented fields
+        const actionAny = action as unknown as Record<string, unknown>;
 
         // Try various instruction field paths
         const instructionStr = extractStringValue(actionAny.instruction);
@@ -486,7 +504,7 @@ export function createTruckRouter(client: HereClient) {
 
     // Collect telemetry for debug
     const telemetry = collectTelemetryCounts(response);
-    const alpsCheck = checkPolylineForAlpsTunnels(response);
+    const polylineAnalysis = analyzePolylines(response);
     const samples = collectSamples(response);
 
     return {
@@ -497,13 +515,14 @@ export function createTruckRouter(client: HereClient) {
         viaCount: waypoints.length,
         sectionsCount: telemetry.sectionsCount,
         actionsCountTotal: telemetry.actionsCountTotal,
-        polylinePointsChecked: alpsCheck.pointsChecked,
+        polylinePointsChecked: polylineAnalysis.alpsCheck.pointsChecked,
         alpsMatch: {
-          frejus: alpsCheck.frejus,
-          montBlanc: alpsCheck.montBlanc,
+          frejus: polylineAnalysis.alpsCheck.frejus,
+          montBlanc: polylineAnalysis.alpsCheck.montBlanc,
         },
-        alpsMatchDetails: alpsCheck.details,
+        alpsMatchDetails: polylineAnalysis.alpsCheck.details,
         samples,
+        polylineSanity: polylineAnalysis.sanityStats,
       },
     };
   }

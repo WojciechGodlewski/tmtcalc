@@ -9,6 +9,7 @@ import {
   checkAlpsTunnels,
   checkAlpsTunnelsFromPolyline,
   haversineDistanceKm,
+  computePolylineSanityStats,
   FREJUS_BBOX,
   MONT_BLANC_BBOX,
   FREJUS_CENTER,
@@ -200,6 +201,35 @@ describe('haversineDistanceKm', () => {
     expect(distance).toBeGreaterThan(1.5);
     expect(distance).toBeLessThan(2.5);
   });
+
+  it('sanity: equator 1 degree longitude ~ 111.19 km', () => {
+    // At equator, 1 degree of longitude should be approximately 111.19 km
+    const origin: PolylinePoint = { lat: 0, lng: 0 };
+    const oneDegreeEast: PolylinePoint = { lat: 0, lng: 1 };
+    const distance = haversineDistanceKm(origin, oneDegreeEast);
+    // Should be close to 111.19 km (Earth's equatorial circumference / 360)
+    expect(distance).toBeGreaterThan(110);
+    expect(distance).toBeLessThan(112);
+  });
+
+  it('sanity: Turin to Bardonecchia < 100 km', () => {
+    // Turin (45.06235, 7.67993) to Bardonecchia (45.07948, 6.69965)
+    // These are both in the Alps, near Frejus tunnel
+    const turin: PolylinePoint = { lat: 45.06235, lng: 7.67993 };
+    const bardonecchia: PolylinePoint = { lat: 45.07948, lng: 6.69965 };
+    const distance = haversineDistanceKm(turin, bardonecchia);
+    // Actual distance is approximately 69 km
+    expect(distance).toBeGreaterThan(60);
+    expect(distance).toBeLessThan(100);
+  });
+
+  it('sanity: should not produce absurd distances like 5000+ km for nearby points', () => {
+    // Points in the Alps should be close to Frejus center
+    const alpinePoint: PolylinePoint = { lat: 45.1, lng: 6.8 };
+    const distance = haversineDistanceKm(alpinePoint, FREJUS_CENTER);
+    // Should be just a few km, not 5000+ km
+    expect(distance).toBeLessThan(20);
+  });
 });
 
 describe('checkAlpsTunnels with TunnelMatchDetails', () => {
@@ -340,5 +370,122 @@ describe('bbox coordinates validation', () => {
   it('bboxes should not overlap', () => {
     // Frejus is south of Mont Blanc
     expect(FREJUS_BBOX.maxLat).toBeLessThan(MONT_BLANC_BBOX.minLat);
+  });
+});
+
+describe('computePolylineSanityStats', () => {
+  it('returns null stats for empty points array', () => {
+    const stats = computePolylineSanityStats([]);
+    expect(stats.polylineBounds).toBeNull();
+    expect(stats.polylineFirstPoint).toBeNull();
+    expect(stats.polylineLastPoint).toBeNull();
+    expect(stats.pointCount).toBe(0);
+  });
+
+  it('computes bounds correctly for single point', () => {
+    const points: PolylinePoint[] = [{ lat: 45.1, lng: 6.7 }];
+    const stats = computePolylineSanityStats(points);
+
+    expect(stats.pointCount).toBe(1);
+    expect(stats.polylineBounds).toEqual({
+      minLat: 45.1,
+      maxLat: 45.1,
+      minLng: 6.7,
+      maxLng: 6.7,
+    });
+    expect(stats.polylineFirstPoint).toEqual({ lat: 45.1, lng: 6.7 });
+    expect(stats.polylineLastPoint).toEqual({ lat: 45.1, lng: 6.7 });
+  });
+
+  it('computes bounds correctly for multiple points', () => {
+    const points: PolylinePoint[] = [
+      { lat: 45.0, lng: 6.5 },
+      { lat: 45.5, lng: 7.0 },
+      { lat: 44.5, lng: 6.0 },
+    ];
+    const stats = computePolylineSanityStats(points);
+
+    expect(stats.pointCount).toBe(3);
+    expect(stats.polylineBounds).toEqual({
+      minLat: 44.5,
+      maxLat: 45.5,
+      minLng: 6.0,
+      maxLng: 7.0,
+    });
+    expect(stats.polylineFirstPoint).toEqual({ lat: 45.0, lng: 6.5 });
+    expect(stats.polylineLastPoint).toEqual({ lat: 44.5, lng: 6.0 });
+  });
+});
+
+describe('polyline decoder output validation', () => {
+  it('decoder handles sample polyline without crashing', () => {
+    // Test with a sample polyline string (may or may not be a valid route)
+    const encoded = 'BFoz5xJ67i1B1B7PzIhaxL7Y';
+    const points = decodeFlexiblePolyline(encoded);
+
+    // Should have decoded some points
+    expect(points.length).toBeGreaterThan(0);
+
+    // All points should have numeric lat/lng
+    for (const point of points) {
+      expect(typeof point.lat).toBe('number');
+      expect(typeof point.lng).toBe('number');
+      expect(Number.isFinite(point.lat)).toBe(true);
+      expect(Number.isFinite(point.lng)).toBe(true);
+    }
+
+    // Check that bounds are computed correctly
+    const stats = computePolylineSanityStats(points);
+    expect(stats.polylineBounds).not.toBeNull();
+  });
+
+  it('decoded polyline for Turin->Chambery route should have European bounds', () => {
+    // For a Turin to Chambery route via Bardonecchia:
+    // - Lat should be roughly 44 to 46 (Alps region)
+    // - Lng should be roughly 5 to 8 (French/Italian Alps)
+    //
+    // We create synthetic points to validate the sanity checking
+    const syntheticAlpineRoute: PolylinePoint[] = [
+      { lat: 45.06235, lng: 7.67993 },  // Turin
+      { lat: 45.07948, lng: 6.69965 },  // Bardonecchia (near Frejus)
+      { lat: 45.56628, lng: 5.91215 },  // Chambery
+    ];
+
+    const stats = computePolylineSanityStats(syntheticAlpineRoute);
+
+    // Sanity check: bounds should be within Europe/Alps region
+    expect(stats.polylineBounds).not.toBeNull();
+    const bounds = stats.polylineBounds!;
+
+    // Latitude bounds should be roughly 44-46 for Alpine route
+    expect(bounds.minLat).toBeGreaterThan(44);
+    expect(bounds.maxLat).toBeLessThan(47);
+
+    // Longitude bounds should be roughly 5-8 for French/Italian Alps
+    expect(bounds.minLng).toBeGreaterThan(4);
+    expect(bounds.maxLng).toBeLessThan(9);
+
+    // First point should be Turin
+    expect(stats.polylineFirstPoint?.lat).toBeCloseTo(45.06235, 4);
+    expect(stats.polylineFirstPoint?.lng).toBeCloseTo(7.67993, 4);
+
+    // Last point should be Chambery
+    expect(stats.polylineLastPoint?.lat).toBeCloseTo(45.56628, 4);
+    expect(stats.polylineLastPoint?.lng).toBeCloseTo(5.91215, 4);
+  });
+
+  it('should NOT produce (0,0) or near-zero coordinates for valid polylines', () => {
+    // This test guards against the bug where incorrect header decoding
+    // caused all coordinates to be near (0, 0)
+    const encoded = 'BFoz5xJ67i1B1B7PzIhaxL7Y';
+    const points = decodeFlexiblePolyline(encoded);
+
+    if (points.length > 0) {
+      // At least one point should be far from (0, 0)
+      const hasNonZeroPoint = points.some(
+        (p) => Math.abs(p.lat) > 1 || Math.abs(p.lng) > 1
+      );
+      expect(hasNonZeroPoint).toBe(true);
+    }
   });
 });
