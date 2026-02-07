@@ -276,6 +276,11 @@ const routeWithTolls: HereRoutingResponse = {
 /**
  * Fixture 4: Route with tunnel (Lyon to Turin via Fréjus)
  */
+/**
+ * Fixture 4: Route with Fréjus tunnel (Lyon to Turin)
+ * Note: crossesAlps detection now requires polyline geofencing.
+ * Without a valid polyline, crossesAlps will be false even if action text mentions the tunnel.
+ */
 const routeWithTunnel: HereRoutingResponse = {
   routes: [
     {
@@ -304,6 +309,7 @@ const routeWithTunnel: HereRoutingResponse = {
             baseDuration: 14400,
           },
           transport: { mode: 'truck' },
+          // Note: No polyline in this fixture - crossesAlps requires polyline geofencing
           tolls: [
             {
               tolls: [
@@ -544,10 +550,15 @@ describe('extractRouteFactsFromHere', () => {
       expect(result.raw.warnings[0].code).toBe('hazardousGoodsRestriction');
     });
 
-    it('sets crossesAlps flag for alpine tunnel', () => {
+    it('crossesAlps requires polyline geofencing (action text alone is insufficient)', () => {
+      // Without a valid polyline passing through Frejus bbox,
+      // crossesAlps will be false even if action text mentions the tunnel
       const result = extractRouteFactsFromHere(routeWithTunnel);
 
-      expect(result.riskFlags.crossesAlps).toBe(true);
+      // hasTunnel is still set via action text detection
+      expect(result.infrastructure.hasTunnel).toBe(true);
+      // crossesAlps requires polyline geofencing - without polyline it's false
+      expect(result.riskFlags.crossesAlps).toBe(false);
     });
 
     it('detects truck restrictions from notices', () => {
@@ -1082,7 +1093,7 @@ describe('extractRouteFactsFromHere', () => {
       expect(result.infrastructure.tollCountries).toEqual([]);
     });
 
-    it('handles tunnel instruction without actual tunnel name - no reliable detection without spans', () => {
+    it('handles generic tunnel instruction without specific name', () => {
       const response: HereRoutingResponse = {
         routes: [
           {
@@ -1130,14 +1141,17 @@ describe('extractRouteFactsFromHere', () => {
       expect(() => extractRouteFactsFromHere(response)).not.toThrow();
 
       const result = extractRouteFactsFromHere(response);
-      // Generic "Enter tunnel" action without span confirmation is not reliable
-      // hasTunnel requires either spans with tunnel=true or named tunnels
-      expect(result.infrastructure.hasTunnel).toBe(false);
-      expect(result.infrastructure.tunnels.length).toBe(0);
+      // Generic "Enter tunnel" is still detected as having a tunnel
+      // but crossesAlps won't be set without polyline geofencing
+      expect(result.infrastructure.hasTunnel).toBe(true);
+      expect(result.riskFlags.crossesAlps).toBe(false);
     });
   });
 
-  describe('diacritics-insensitive tunnel detection', () => {
+  describe('diacritics-insensitive tunnel detection (action text - secondary)', () => {
+    // Note: crossesAlps is now set via polyline geofencing only
+    // Action text detection still populates hasTunnel and tunnels list
+
     it('detects "Tunnel du Fréjus" with diacritics', () => {
       const response: HereRoutingResponse = {
         routes: [{
@@ -1159,7 +1173,8 @@ describe('extractRouteFactsFromHere', () => {
       const tunnel = result.infrastructure.tunnels.find((t) => t.name?.includes('Fréjus'));
       expect(tunnel).toBeDefined();
       expect(tunnel?.category).toBe('alpine');
-      expect(result.riskFlags.crossesAlps).toBe(true);
+      // crossesAlps requires polyline geofencing - without polyline it's false
+      expect(result.riskFlags.crossesAlps).toBe(false);
     });
 
     it('detects "Tunnel du Frejus" without diacritics', () => {
@@ -1181,7 +1196,8 @@ describe('extractRouteFactsFromHere', () => {
       const result = extractRouteFactsFromHere(response);
       expect(result.infrastructure.hasTunnel).toBe(true);
       expect(result.infrastructure.tunnels.some((t) => t.name?.includes('Fréjus'))).toBe(true);
-      expect(result.riskFlags.crossesAlps).toBe(true);
+      // crossesAlps requires polyline geofencing
+      expect(result.riskFlags.crossesAlps).toBe(false);
     });
 
     it('detects "Traforo del Frejus" (Italian name)', () => {
@@ -1203,7 +1219,8 @@ describe('extractRouteFactsFromHere', () => {
       const result = extractRouteFactsFromHere(response);
       expect(result.infrastructure.hasTunnel).toBe(true);
       expect(result.infrastructure.tunnels.some((t) => t.name?.includes('Fréjus'))).toBe(true);
-      expect(result.riskFlags.crossesAlps).toBe(true);
+      // crossesAlps requires polyline geofencing
+      expect(result.riskFlags.crossesAlps).toBe(false);
     });
 
     it('detects "Tunnel du Mont Blanc" (French name)', () => {
@@ -1225,7 +1242,8 @@ describe('extractRouteFactsFromHere', () => {
       const result = extractRouteFactsFromHere(response);
       expect(result.infrastructure.hasTunnel).toBe(true);
       expect(result.infrastructure.tunnels.some((t) => t.name?.includes('Mont Blanc'))).toBe(true);
-      expect(result.riskFlags.crossesAlps).toBe(true);
+      // crossesAlps requires polyline geofencing
+      expect(result.riskFlags.crossesAlps).toBe(false);
     });
 
     it('detects "Traforo del Monte Bianco" (Italian name)', () => {
@@ -1247,7 +1265,8 @@ describe('extractRouteFactsFromHere', () => {
       const result = extractRouteFactsFromHere(response);
       expect(result.infrastructure.hasTunnel).toBe(true);
       expect(result.infrastructure.tunnels.some((t) => t.name?.includes('Mont Blanc'))).toBe(true);
-      expect(result.riskFlags.crossesAlps).toBe(true);
+      // crossesAlps requires polyline geofencing
+      expect(result.riskFlags.crossesAlps).toBe(false);
     });
 
     it('does not detect Alps tunnel for non-alpine tunnels', () => {
@@ -1274,11 +1293,14 @@ describe('extractRouteFactsFromHere', () => {
     });
   });
 
-  describe('spans-based tunnel detection', () => {
-    it('detects Fréjus tunnel via span with tunnel=true and name', () => {
+  // Note: spans are no longer returned from HERE Routing v8 API
+  // Alps tunnel detection now uses polyline geofencing (see flexible-polyline.test.ts)
+  // The extractRouteFactsFromHere function checks polylines for Frejus/Mont Blanc bbox
+  describe('polyline geofencing behavior', () => {
+    it('sets crossesAlps=false when no polyline is present', () => {
       const response: HereRoutingResponse = {
         routes: [{
-          id: 'route-frejus-spans',
+          id: 'route-no-polyline',
           sections: [{
             id: 'section-1',
             type: 'vehicle',
@@ -1286,117 +1308,7 @@ describe('extractRouteFactsFromHere', () => {
             arrival: { time: '2024-01-15T14:30:00+01:00', place: { type: 'place', location: { lat: 45.56, lng: 5.92 } } },
             summary: { duration: 23400, length: 300000, baseDuration: 21600 },
             transport: { mode: 'truck' },
-            spans: [
-              { offset: 0, names: [{ value: 'A32' }] },
-              { offset: 5, names: [{ value: 'Tunnel du Fréjus' }], tunnel: true, countryCode: 'FRA' },
-              { offset: 10, names: [{ value: 'A43' }] },
-            ],
-          }],
-        }],
-      };
-
-      const result = extractRouteFactsFromHere(response);
-      expect(result.infrastructure.hasTunnel).toBe(true);
-      expect(result.infrastructure.tunnels.some((t) => t.name?.includes('Fréjus'))).toBe(true);
-      expect(result.riskFlags.crossesAlps).toBe(true);
-    });
-
-    it('detects Mont Blanc tunnel via span with tunnel=true and name', () => {
-      const response: HereRoutingResponse = {
-        routes: [{
-          id: 'route-montblanc-spans',
-          sections: [{
-            id: 'section-1',
-            type: 'vehicle',
-            departure: { time: '2024-01-15T08:00:00+01:00', place: { type: 'place', location: { lat: 45.89, lng: 6.87 } } },
-            arrival: { time: '2024-01-15T14:30:00+01:00', place: { type: 'place', location: { lat: 45.74, lng: 7.32 } } },
-            summary: { duration: 23400, length: 150000, baseDuration: 21600 },
-            transport: { mode: 'truck' },
-            spans: [
-              { offset: 0, names: [{ value: 'N205' }] },
-              { offset: 5, names: [{ value: 'Traforo del Monte Bianco' }], tunnel: true, countryCode: 'ITA' },
-              { offset: 10, names: [{ value: 'A5' }] },
-            ],
-          }],
-        }],
-      };
-
-      const result = extractRouteFactsFromHere(response);
-      expect(result.infrastructure.hasTunnel).toBe(true);
-      expect(result.infrastructure.tunnels.some((t) => t.name?.includes('Mont Blanc'))).toBe(true);
-      expect(result.riskFlags.crossesAlps).toBe(true);
-    });
-
-    it('sets hasTunnel=true but crossesAlps=false for unnamed tunnel from spans', () => {
-      const response: HereRoutingResponse = {
-        routes: [{
-          id: 'route-unnamed-tunnel-spans',
-          sections: [{
-            id: 'section-1',
-            type: 'vehicle',
-            departure: { time: '2024-01-15T08:00:00+01:00', place: { type: 'place', location: { lat: 52.52, lng: 13.405 } } },
-            arrival: { time: '2024-01-15T14:30:00+01:00', place: { type: 'place', location: { lat: 52.37, lng: 4.90 } } },
-            summary: { duration: 23400, length: 600000, baseDuration: 21600 },
-            transport: { mode: 'truck' },
-            spans: [
-              { offset: 0, names: [{ value: 'A2' }] },
-              { offset: 5, tunnel: true }, // Tunnel without name
-              { offset: 10, names: [{ value: 'A1' }] },
-            ],
-          }],
-        }],
-      };
-
-      const result = extractRouteFactsFromHere(response);
-      expect(result.infrastructure.hasTunnel).toBe(true);
-      // No named tunnel in tunnels array (unnamed tunnels from spans not added to array)
-      expect(result.infrastructure.tunnels.length).toBe(0);
-      // crossesAlps should be false since it's not Frejus/Mont Blanc
-      expect(result.riskFlags.crossesAlps).toBe(false);
-    });
-
-    it('sets crossesAlps=false for non-surcharge alpine tunnels via spans', () => {
-      const response: HereRoutingResponse = {
-        routes: [{
-          id: 'route-gotthard-spans',
-          sections: [{
-            id: 'section-1',
-            type: 'vehicle',
-            departure: { time: '2024-01-15T08:00:00+01:00', place: { type: 'place', location: { lat: 47.38, lng: 8.54 } } },
-            arrival: { time: '2024-01-15T14:30:00+01:00', place: { type: 'place', location: { lat: 46.20, lng: 9.02 } } },
-            summary: { duration: 23400, length: 200000, baseDuration: 21600 },
-            transport: { mode: 'truck' },
-            spans: [
-              { offset: 0, names: [{ value: 'A2' }] },
-              { offset: 5, names: [{ value: 'Gotthard Tunnel' }], tunnel: true, countryCode: 'CHE' },
-              { offset: 10, names: [{ value: 'A2' }] },
-            ],
-          }],
-        }],
-      };
-
-      const result = extractRouteFactsFromHere(response);
-      expect(result.infrastructure.hasTunnel).toBe(true);
-      expect(result.infrastructure.tunnels.some((t) => t.name?.includes('Gotthard'))).toBe(true);
-      // Gotthard is detected as alpine but does NOT trigger Alps surcharge
-      // crossesAlps is only true for Frejus/Mont Blanc
-      expect(result.riskFlags.crossesAlps).toBe(false);
-    });
-
-    it('detects tunnel via both spans and actions (no duplicates)', () => {
-      const response: HereRoutingResponse = {
-        routes: [{
-          id: 'route-frejus-both',
-          sections: [{
-            id: 'section-1',
-            type: 'vehicle',
-            departure: { time: '2024-01-15T08:00:00+01:00', place: { type: 'place', location: { lat: 45.07, lng: 7.69 } } },
-            arrival: { time: '2024-01-15T14:30:00+01:00', place: { type: 'place', location: { lat: 45.56, lng: 5.92 } } },
-            summary: { duration: 23400, length: 300000, baseDuration: 21600 },
-            transport: { mode: 'truck' },
-            spans: [
-              { offset: 5, names: [{ value: 'Tunnel du Fréjus' }], tunnel: true },
-            ],
+            // No polyline - can't do geofencing
             actions: [
               { action: 'continue', duration: 600, length: 10000, instruction: 'Enter the Fréjus Tunnel', offset: 0 },
             ],
@@ -1405,17 +1317,16 @@ describe('extractRouteFactsFromHere', () => {
       };
 
       const result = extractRouteFactsFromHere(response);
+      // Action text still detects hasTunnel
       expect(result.infrastructure.hasTunnel).toBe(true);
-      // Should only have one Fréjus tunnel entry (deduplicated)
-      const frejusTunnels = result.infrastructure.tunnels.filter((t) => t.name?.includes('Fréjus'));
-      expect(frejusTunnels.length).toBe(1);
-      expect(result.riskFlags.crossesAlps).toBe(true);
+      // But crossesAlps requires polyline geofencing
+      expect(result.riskFlags.crossesAlps).toBe(false);
     });
 
-    it('prioritizes span detection for tunnel with name', () => {
+    it('sets crossesAlps=false when polyline decode fails', () => {
       const response: HereRoutingResponse = {
         routes: [{
-          id: 'route-span-priority',
+          id: 'route-bad-polyline',
           sections: [{
             id: 'section-1',
             type: 'vehicle',
@@ -1423,22 +1334,21 @@ describe('extractRouteFactsFromHere', () => {
             arrival: { time: '2024-01-15T14:30:00+01:00', place: { type: 'place', location: { lat: 45.56, lng: 5.92 } } },
             summary: { duration: 23400, length: 300000, baseDuration: 21600 },
             transport: { mode: 'truck' },
-            spans: [
-              { offset: 0, names: [{ value: 'A32' }] },
-              { offset: 5, names: [{ value: 'Tunnel du Fréjus' }], tunnel: true, countryCode: 'FRA' },
-            ],
-            // No actions mentioning tunnel
+            // Invalid polyline
+            polyline: 'invalid_polyline_data',
             actions: [
-              { action: 'depart', duration: 0, length: 0, instruction: 'Head west on A32', offset: 0 },
+              { action: 'continue', duration: 600, length: 10000, instruction: 'Enter the Fréjus Tunnel', offset: 0 },
             ],
           }],
         }],
       };
 
+      // Should not throw - gracefully handles decode errors
+      expect(() => extractRouteFactsFromHere(response)).not.toThrow();
+
       const result = extractRouteFactsFromHere(response);
-      expect(result.infrastructure.hasTunnel).toBe(true);
-      expect(result.infrastructure.tunnels.some((t) => t.name?.includes('Fréjus'))).toBe(true);
-      expect(result.riskFlags.crossesAlps).toBe(true);
+      // crossesAlps is false when polyline can't be decoded
+      expect(result.riskFlags.crossesAlps).toBe(false);
     });
   });
 });

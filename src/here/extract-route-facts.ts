@@ -16,6 +16,11 @@ import type {
   HereNotice,
   HereToll,
 } from './route-truck.js';
+import {
+  decodeFlexiblePolyline,
+  checkAlpsTunnels,
+  type AlpsTunnelCheckResult,
+} from './flexible-polyline.js';
 
 /**
  * Safely convert a value to lowercase string
@@ -298,6 +303,42 @@ function extractFerryInfo(sections: HereRouteSection[]): {
 }
 
 /**
+ * Check polylines from all sections for Alps tunnel bbox matches
+ * Primary detection method for Frejus/Mont Blanc tunnels
+ */
+function checkPolylinesForAlpsTunnels(sections: HereRouteSection[]): AlpsTunnelCheckResult {
+  let totalPointsChecked = 0;
+  let frejusMatch = false;
+  let montBlancMatch = false;
+
+  for (const section of sections) {
+    if (!section.polyline) continue;
+
+    try {
+      const points = decodeFlexiblePolyline(section.polyline);
+      const result = checkAlpsTunnels(points);
+
+      totalPointsChecked += result.pointsChecked;
+      if (result.frejus) frejusMatch = true;
+      if (result.montBlanc) montBlancMatch = true;
+
+      // Early exit if both found
+      if (frejusMatch && montBlancMatch) {
+        break;
+      }
+    } catch {
+      // Ignore polyline decode errors, continue with other sections
+    }
+  }
+
+  return {
+    frejus: frejusMatch,
+    montBlanc: montBlancMatch,
+    pointsChecked: totalPointsChecked,
+  };
+}
+
+/**
  * Check if a tunnel name matches Frejus or Mont Blanc (Alps surcharge tunnels)
  */
 function isAlpsSurchargeTunnel(tunnelName: string | null): boolean {
@@ -375,86 +416,82 @@ function extractTunnelFromSpan(span: HereRouteSpan): Tunnel | null {
 }
 
 /**
- * Extract tunnel information from sections using spans (primary) and actions (secondary)
+ * Extract tunnel information from sections
+ * Uses polyline geofencing (primary) and action text (secondary) for detection
  */
-function extractTunnels(sections: HereRouteSection[]): {
+function extractTunnels(
+  sections: HereRouteSection[],
+  alpsMatch: AlpsTunnelCheckResult
+): {
   hasTunnel: boolean;
   tunnels: Tunnel[];
-  /** Set to true only if Frejus or Mont Blanc tunnel detected */
+  /** Set to true only if Frejus or Mont Blanc tunnel detected via bbox */
   hasAlpsSurchargeTunnel: boolean;
 } {
   const tunnels: Tunnel[] = [];
   const seenTunnels = new Set<string>();
-  let hasAlpsSurchargeTunnel = false;
-  let hasUnnamedTunnel = false;
+  let hasGenericTunnel = false;
 
+  // PRIMARY: Use polyline geofencing for Frejus/Mont Blanc
+  if (alpsMatch.frejus) {
+    const frejusTunnel: Tunnel = {
+      name: 'Fréjus Tunnel',
+      category: 'alpine',
+      country: 'FRA/ITA',
+    };
+    seenTunnels.add('Fréjus Tunnel');
+    tunnels.push(frejusTunnel);
+  }
+
+  if (alpsMatch.montBlanc) {
+    const montBlancTunnel: Tunnel = {
+      name: 'Mont Blanc Tunnel',
+      category: 'alpine',
+      country: 'FRA/ITA',
+    };
+    seenTunnels.add('Mont Blanc Tunnel');
+    tunnels.push(montBlancTunnel);
+  }
+
+  // SECONDARY: Check actions for other tunnel mentions
   for (const section of sections) {
-    // PRIMARY: Check spans for tunnel indicators
-    for (const span of asArray<HereRouteSpan>(section.spans)) {
-      const tunnel = extractTunnelFromSpan(span);
-      if (tunnel) {
-        const key = tunnel.name || 'unnamed-span';
-
-        if (tunnel.name) {
-          // Check if this is an Alps surcharge tunnel
-          if (isAlpsSurchargeTunnel(tunnel.name)) {
-            hasAlpsSurchargeTunnel = true;
-          }
-
-          if (!seenTunnels.has(key)) {
-            seenTunnels.add(key);
-            tunnels.push(tunnel);
-          }
-        } else {
-          // Unnamed tunnel from span - just note we have a tunnel
-          hasUnnamedTunnel = true;
-        }
-      }
-    }
-
-    // SECONDARY: Check actions for tunnel mentions
     for (const action of asArray<HereRouteAction>(section.actions)) {
       const tunnel = extractTunnelFromText(action.instruction);
       if (tunnel) {
-        const key = tunnel.name || 'unnamed-action';
-
         if (tunnel.name) {
-          // Check if this is an Alps surcharge tunnel
-          if (isAlpsSurchargeTunnel(tunnel.name)) {
-            hasAlpsSurchargeTunnel = true;
-          }
-
-          if (!seenTunnels.has(key)) {
-            seenTunnels.add(key);
+          // Skip if already added via bbox detection
+          if (!seenTunnels.has(tunnel.name)) {
+            seenTunnels.add(tunnel.name);
             tunnels.push(tunnel);
           }
+        } else {
+          // Generic tunnel mention without name
+          hasGenericTunnel = true;
         }
       }
     }
 
-    // SECONDARY: Check notices for tunnel mentions
+    // Check notices for tunnel mentions
     for (const notice of asArray<HereNotice>(section.notices)) {
       const tunnel = extractTunnelFromText(notice.title);
       if (tunnel) {
-        const key = tunnel.name || 'unnamed-notice';
-
         if (tunnel.name) {
-          // Check if this is an Alps surcharge tunnel
-          if (isAlpsSurchargeTunnel(tunnel.name)) {
-            hasAlpsSurchargeTunnel = true;
-          }
-
-          if (!seenTunnels.has(key)) {
-            seenTunnels.add(key);
+          if (!seenTunnels.has(tunnel.name)) {
+            seenTunnels.add(tunnel.name);
             tunnels.push(tunnel);
           }
+        } else {
+          hasGenericTunnel = true;
         }
       }
     }
   }
 
-  // hasTunnel is true if we found any named tunnels OR any unnamed tunnels from spans
-  const hasTunnel = tunnels.length > 0 || hasUnnamedTunnel;
+  // hasTunnel is true if we found any tunnels via bbox or text
+  const hasTunnel = tunnels.length > 0 || hasGenericTunnel;
+
+  // Alps surcharge tunnel is detected via polyline geofencing only
+  const hasAlpsSurchargeTunnel = alpsMatch.frejus || alpsMatch.montBlanc;
 
   return {
     hasTunnel,
@@ -643,10 +680,13 @@ export function extractRouteFactsFromHere(hereResponse: HereRoutingResponse): Ro
     ? Math.round((totalDurationSeconds / 3600) * 100) / 100
     : null;
 
+  // Check polylines for Alps tunnels (primary detection method)
+  const alpsMatch = checkPolylinesForAlpsTunnels(sections);
+
   // Extract infrastructure info
   const tollInfo = extractTolls(sections);
   const ferryInfo = extractFerryInfo(sections);
-  const tunnelInfo = extractTunnels(sections);
+  const tunnelInfo = extractTunnels(sections, alpsMatch);
 
   // Extract regulatory info
   const restrictionInfo = extractRestrictions(sections);
