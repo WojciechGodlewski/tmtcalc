@@ -159,13 +159,6 @@ interface AlpsCenterDistances {
   };
 }
 
-interface PolylineSanityStats {
-  polylineBounds: { minLat: number; maxLat: number; minLng: number; maxLng: number } | null;
-  polylineFirstPoint: { lat: number; lng: number } | null;
-  polylineLastPoint: { lat: number; lng: number } | null;
-  pointCount: number;
-}
-
 interface HereResponseDebug {
   sectionsCount: number;
   actionsCountTotal: number;
@@ -178,11 +171,16 @@ interface HereResponseDebug {
     frejus: TunnelMatchDetail;
     montBlanc: TunnelMatchDetail;
   };
-  alpsCenters: AlpsCenters;
-  alpsBboxes: AlpsBboxes;
-  alpsCenterDistances: AlpsCenterDistances;
-  polylineSanity: PolylineSanityStats;
+  /** Polyline bounds (flattened from polylineSanity) */
+  polylineBounds: { minLat: number; maxLat: number; minLng: number; maxLng: number } | null;
+  polylineFirstPoint: { lat: number; lng: number } | null;
+  polylineLastPoint: { lat: number; lng: number } | null;
   samples: string[];
+}
+
+interface AlpsConfig {
+  centers: AlpsCenters;
+  bboxes: AlpsBboxes;
 }
 
 interface QuoteResponse {
@@ -192,6 +190,10 @@ interface QuoteResponse {
     resolvedPoints: ResolvedPoints;
     hereRequest: HereRequestDebug;
     hereResponse: HereResponseDebug;
+    /** Alps tunnel detection configuration */
+    alpsConfig: AlpsConfig;
+    /** Distances from origin/waypoints/destination to tunnel centers */
+    alpsCenterDistances: AlpsCenterDistances;
   };
 }
 
@@ -359,12 +361,13 @@ export function createQuoteHandler(hereService: HereService) {
             polylinePointsChecked: routeResult.debug.polylinePointsChecked,
             alpsMatch: routeResult.debug.alpsMatch,
             alpsMatchDetails: routeResult.debug.alpsMatchDetails,
-            alpsCenters: routeResult.debug.alpsConfig.centers,
-            alpsBboxes: routeResult.debug.alpsConfig.bboxes,
-            alpsCenterDistances: routeResult.debug.alpsCenterDistances,
-            polylineSanity: routeResult.debug.polylineSanity,
+            polylineBounds: routeResult.debug.polylineSanity.polylineBounds,
+            polylineFirstPoint: routeResult.debug.polylineSanity.polylineFirstPoint,
+            polylineLastPoint: routeResult.debug.polylineSanity.polylineLastPoint,
             samples: routeResult.debug.samples,
           },
+          alpsConfig: routeResult.debug.alpsConfig,
+          alpsCenterDistances: routeResult.debug.alpsCenterDistances,
         },
       };
     } catch (error) {

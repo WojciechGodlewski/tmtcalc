@@ -821,4 +821,239 @@ describe('POST /api/route-facts', () => {
       expect(body.routeFacts.geography.isEU).toBe(true);
     });
   });
+
+  describe('Alps debug config propagation', () => {
+    it('includes alpsConfig.centers in response debug', async () => {
+      const app = buildApp({ hereService: mockHereService });
+      await app.ready();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/route-facts',
+        payload: {
+          origin: { lat: 52.52, lng: 13.405 },
+          destination: { lat: 52.2297, lng: 21.0122 },
+          vehicleProfileId: 'ftl_13_6_33ep',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+
+      // alpsConfig should be at top level of debug, not inside hereResponse
+      expect(body.debug.alpsConfig).toBeDefined();
+      expect(body.debug.alpsConfig.centers).toBeDefined();
+      expect(body.debug.alpsConfig.centers.frejus).toBeDefined();
+      expect(typeof body.debug.alpsConfig.centers.frejus.lat).toBe('number');
+      expect(typeof body.debug.alpsConfig.centers.frejus.lng).toBe('number');
+      expect(body.debug.alpsConfig.centers.montBlanc).toBeDefined();
+      expect(typeof body.debug.alpsConfig.centers.montBlanc.lat).toBe('number');
+    });
+
+    it('includes alpsConfig.bboxes in response debug', async () => {
+      const app = buildApp({ hereService: mockHereService });
+      await app.ready();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/route-facts',
+        payload: {
+          origin: { lat: 52.52, lng: 13.405 },
+          destination: { lat: 52.2297, lng: 21.0122 },
+          vehicleProfileId: 'ftl_13_6_33ep',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+
+      expect(body.debug.alpsConfig.bboxes).toBeDefined();
+      expect(body.debug.alpsConfig.bboxes.frejus).toBeDefined();
+      expect(typeof body.debug.alpsConfig.bboxes.frejus.minLat).toBe('number');
+      expect(typeof body.debug.alpsConfig.bboxes.frejus.maxLat).toBe('number');
+    });
+
+    it('includes alpsCenterDistances in response debug', async () => {
+      const app = buildApp({ hereService: mockHereService });
+      await app.ready();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/route-facts',
+        payload: {
+          origin: { lat: 52.52, lng: 13.405 },
+          destination: { lat: 52.2297, lng: 21.0122 },
+          vehicleProfileId: 'ftl_13_6_33ep',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+
+      // alpsCenterDistances should be at top level of debug
+      expect(body.debug.alpsCenterDistances).toBeDefined();
+      expect(body.debug.alpsCenterDistances.frejus).toBeDefined();
+      expect(typeof body.debug.alpsCenterDistances.frejus.fromOrigin).toBe('number');
+      expect(Array.isArray(body.debug.alpsCenterDistances.frejus.fromWaypoints)).toBe(true);
+    });
+
+    it('includes waypoint distances when waypoints exist', async () => {
+      mockHereService.routeTruck = vi.fn().mockResolvedValue({
+        hereResponse: {
+          routes: [{
+            id: 'mock-route-1',
+            sections: [{
+              id: 'section-1',
+              type: 'vehicle',
+              departure: { time: '2024-01-15T08:00:00+01:00', place: { type: 'place', location: { lat: 45.0703, lng: 7.6869 } } },
+              arrival: { time: '2024-01-15T14:30:00+01:00', place: { type: 'place', location: { lat: 45.5646, lng: 5.9178 } } },
+              summary: { duration: 23400, length: 150000, baseDuration: 21600 },
+              transport: { mode: 'truck' },
+            }],
+          }],
+        },
+        debug: {
+          maskedUrl: 'https://router.hereapi.com/v8/routes?via=45.08%2C6.7!passThrough%3Dtrue',
+          via: [{ lat: 45.08, lng: 6.7 }],
+          viaCount: 1,
+          sectionsCount: 1,
+          actionsCountTotal: 0,
+          polylinePointsChecked: 0,
+          alpsMatch: { frejus: true, montBlanc: false },
+          alpsMatchDetails: {
+            frejus: { matched: true, pointsInside: 1 },
+            montBlanc: { matched: false, pointsInside: 0 },
+          },
+          alpsConfig: {
+            centers: {
+              frejus: { lat: 45.086, lng: 6.706 },
+              montBlanc: { lat: 45.924, lng: 6.968 },
+            },
+            bboxes: {
+              frejus: { minLat: 45.03, maxLat: 45.17, minLng: 6.60, maxLng: 6.78 },
+              montBlanc: { minLat: 45.82, maxLat: 45.96, minLng: 6.92, maxLng: 7.03 },
+            },
+          },
+          alpsCenterDistances: {
+            frejus: { fromOrigin: 70, fromWaypoints: [0.88], fromDestination: 82 },
+            montBlanc: { fromOrigin: 100, fromWaypoints: [95], fromDestination: 50 },
+          },
+          polylineSanity: {
+            polylineBounds: { minLat: 45.07, maxLat: 45.57, minLng: 5.91, maxLng: 7.69 },
+            polylineFirstPoint: { lat: 45.0703, lng: 7.6869 },
+            polylineLastPoint: { lat: 45.5646, lng: 5.9178 },
+            pointCount: 100,
+          },
+          samples: [],
+        },
+      });
+
+      mockHereService.geocode = vi.fn()
+        .mockResolvedValueOnce({ lat: 45.0703, lng: 7.6869, label: 'Turin, Italy', countryCode: 'IT' })
+        .mockResolvedValueOnce({ lat: 45.08, lng: 6.7, label: 'Bardonecchia, Italy', countryCode: 'IT' })
+        .mockResolvedValueOnce({ lat: 45.5646, lng: 5.9178, label: 'Chambéry, France', countryCode: 'FR' });
+
+      const app = buildApp({ hereService: mockHereService });
+      await app.ready();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/route-facts',
+        payload: {
+          origin: { address: 'Turin, Italy' },
+          destination: { address: 'Chambéry, France' },
+          waypoints: [{ address: 'Bardonecchia, Italy' }],
+          vehicleProfileId: 'solo_18t_23ep',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+
+      // Waypoint distance should be present and be a number
+      expect(body.debug.alpsCenterDistances.frejus.fromWaypoints).toHaveLength(1);
+      expect(typeof body.debug.alpsCenterDistances.frejus.fromWaypoints[0]).toBe('number');
+      expect(body.debug.alpsCenterDistances.frejus.fromWaypoints[0]).toBeLessThan(5); // Bardonecchia is near Frejus
+    });
+
+    it('includes polylineBounds in hereResponse when polyline is returned', async () => {
+      mockHereService.routeTruck = vi.fn().mockResolvedValue({
+        hereResponse: {
+          routes: [{
+            id: 'mock-route-1',
+            sections: [{
+              id: 'section-1',
+              type: 'vehicle',
+              departure: { time: '2024-01-15T08:00:00+01:00', place: { type: 'place', location: { lat: 45.0703, lng: 7.6869 } } },
+              arrival: { time: '2024-01-15T14:30:00+01:00', place: { type: 'place', location: { lat: 45.5646, lng: 5.9178 } } },
+              summary: { duration: 23400, length: 150000, baseDuration: 21600 },
+              transport: { mode: 'truck' },
+              polyline: 'BFoz5xJ67i1B1B7PzIhaxL7Y',
+            }],
+          }],
+        },
+        debug: {
+          maskedUrl: 'https://router.hereapi.com/v8/routes',
+          via: [],
+          viaCount: 0,
+          sectionsCount: 1,
+          actionsCountTotal: 0,
+          polylinePointsChecked: 100,
+          alpsMatch: { frejus: false, montBlanc: false },
+          alpsMatchDetails: {
+            frejus: { matched: false, pointsInside: 0 },
+            montBlanc: { matched: false, pointsInside: 0 },
+          },
+          alpsConfig: {
+            centers: {
+              frejus: { lat: 45.086, lng: 6.706 },
+              montBlanc: { lat: 45.924, lng: 6.968 },
+            },
+            bboxes: {
+              frejus: { minLat: 45.03, maxLat: 45.17, minLng: 6.60, maxLng: 6.78 },
+              montBlanc: { minLat: 45.82, maxLat: 45.96, minLng: 6.92, maxLng: 7.03 },
+            },
+          },
+          alpsCenterDistances: {
+            frejus: { fromOrigin: 70, fromWaypoints: [], fromDestination: 82 },
+            montBlanc: { fromOrigin: 100, fromWaypoints: [], fromDestination: 50 },
+          },
+          polylineSanity: {
+            polylineBounds: { minLat: 45.07, maxLat: 45.57, minLng: 5.91, maxLng: 7.69 },
+            polylineFirstPoint: { lat: 45.0703, lng: 7.6869 },
+            polylineLastPoint: { lat: 45.5646, lng: 5.9178 },
+            pointCount: 100,
+          },
+          samples: [],
+        },
+      });
+
+      const app = buildApp({ hereService: mockHereService });
+      await app.ready();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/route-facts',
+        payload: {
+          origin: { lat: 45.0703, lng: 7.6869 },
+          destination: { lat: 45.5646, lng: 5.9178 },
+          vehicleProfileId: 'solo_18t_23ep',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+
+      // polylineBounds should be in hereResponse (flattened, not nested)
+      expect(body.debug.hereResponse.polylineBounds).toBeDefined();
+      expect(typeof body.debug.hereResponse.polylineBounds.minLat).toBe('number');
+      expect(typeof body.debug.hereResponse.polylineBounds.maxLat).toBe('number');
+      expect(typeof body.debug.hereResponse.polylineBounds.minLng).toBe('number');
+      expect(typeof body.debug.hereResponse.polylineBounds.maxLng).toBe('number');
+
+      // polylineFirstPoint and polylineLastPoint should also be present
+      expect(body.debug.hereResponse.polylineFirstPoint).toBeDefined();
+      expect(body.debug.hereResponse.polylineLastPoint).toBeDefined();
+    });
+  });
 });
