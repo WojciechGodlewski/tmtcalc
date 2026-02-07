@@ -180,6 +180,17 @@ interface AlpsCenterDistances {
   };
 }
 
+type AlpsMatchReason = 'waypointProximity' | 'polylineBbox' | 'polylineDistance' | 'none';
+
+interface WaypointProximityResult {
+  frejus: boolean;
+  montBlanc: boolean;
+  reasons: {
+    frejus: AlpsMatchReason;
+    montBlanc: AlpsMatchReason;
+  };
+}
+
 interface HereResponseDebug {
   sectionsCount: number;
   actionsCountTotal: number;
@@ -196,6 +207,15 @@ interface HereResponseDebug {
   polylineBounds: { minLat: number; maxLat: number; minLng: number; maxLng: number } | null;
   polylineFirstPoint: { lat: number; lng: number } | null;
   polylineLastPoint: { lat: number; lng: number } | null;
+  /** Whether polyline bounds are plausible (within Earth coordinate ranges) */
+  polylineBoundsPlausible: boolean;
+  /** Waypoint proximity detection result */
+  waypointProximity: WaypointProximityResult;
+  /** Final match reason for Alps detection */
+  alpsMatchReason: {
+    frejus: AlpsMatchReason;
+    montBlanc: AlpsMatchReason;
+  };
   samples: string[];
 }
 
@@ -372,6 +392,9 @@ export function createRouteFactsHandler(hereService: HereService) {
             polylineBounds: routeResult.debug.polylineSanity.polylineBounds,
             polylineFirstPoint: routeResult.debug.polylineSanity.polylineFirstPoint,
             polylineLastPoint: routeResult.debug.polylineSanity.polylineLastPoint,
+            polylineBoundsPlausible: routeResult.debug.polylineBoundsPlausible,
+            waypointProximity: routeResult.debug.waypointProximity,
+            alpsMatchReason: routeResult.debug.alpsMatchReason,
             samples: routeResult.debug.samples,
           },
           alpsConfig: routeResult.debug.alpsConfig,

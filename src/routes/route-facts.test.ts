@@ -72,8 +72,8 @@ function createMockHereService(): HereService {
         polylinePointsChecked: 0,
         alpsMatch: { frejus: false, montBlanc: false },
         alpsMatchDetails: {
-          frejus: { matched: false, pointsInside: 0 },
-          montBlanc: { matched: false, pointsInside: 0 },
+          frejus: { matched: false, pointsInside: 0, matchReason: 'none' },
+          montBlanc: { matched: false, pointsInside: 0, matchReason: 'none' },
         },
         alpsConfig: {
           centers: {
@@ -95,6 +95,13 @@ function createMockHereService(): HereService {
           polylineLastPoint: null,
           pointCount: 0,
         },
+        waypointProximity: {
+          frejus: false,
+          montBlanc: false,
+          reasons: { frejus: 'none', montBlanc: 'none' },
+        },
+        polylineBoundsPlausible: false,
+        alpsMatchReason: { frejus: 'none', montBlanc: 'none' },
         samples: ['action:instruction:Head east on A115'],
       },
     }),
@@ -508,8 +515,8 @@ describe('POST /api/route-facts', () => {
           polylinePointsChecked: 0,
           alpsMatch: { frejus: false, montBlanc: false },
           alpsMatchDetails: {
-            frejus: { matched: false, pointsInside: 0 },
-            montBlanc: { matched: false, pointsInside: 0 },
+            frejus: { matched: false, pointsInside: 0, matchReason: 'none' },
+            montBlanc: { matched: false, pointsInside: 0, matchReason: 'none' },
           },
           alpsConfig: {
             centers: {
@@ -531,6 +538,13 @@ describe('POST /api/route-facts', () => {
             polylineLastPoint: null,
             pointCount: 0,
           },
+          waypointProximity: {
+            frejus: true,
+            montBlanc: false,
+            reasons: { frejus: 'waypointProximity', montBlanc: 'none' },
+          },
+          polylineBoundsPlausible: false,
+          alpsMatchReason: { frejus: 'waypointProximity', montBlanc: 'none' },
           samples: ['action:instruction:Head west on A32'],
         },
       });
@@ -592,8 +606,8 @@ describe('POST /api/route-facts', () => {
           polylinePointsChecked: 0,
           alpsMatch: { frejus: false, montBlanc: false },
           alpsMatchDetails: {
-            frejus: { matched: false, pointsInside: 0 },
-            montBlanc: { matched: false, pointsInside: 0 },
+            frejus: { matched: false, pointsInside: 0, matchReason: 'none' },
+            montBlanc: { matched: false, pointsInside: 0, matchReason: 'none' },
           },
           alpsConfig: {
             centers: {
@@ -615,6 +629,13 @@ describe('POST /api/route-facts', () => {
             polylineLastPoint: null,
             pointCount: 0,
           },
+          waypointProximity: {
+            frejus: false,
+            montBlanc: false,
+            reasons: { frejus: 'none', montBlanc: 'none' },
+          },
+          polylineBoundsPlausible: false,
+          alpsMatchReason: { frejus: 'none', montBlanc: 'none' },
           samples: [],
         },
       });
@@ -921,8 +942,8 @@ describe('POST /api/route-facts', () => {
           polylinePointsChecked: 0,
           alpsMatch: { frejus: true, montBlanc: false },
           alpsMatchDetails: {
-            frejus: { matched: true, pointsInside: 1 },
-            montBlanc: { matched: false, pointsInside: 0 },
+            frejus: { matched: true, pointsInside: 1, matchReason: 'waypointProximity' },
+            montBlanc: { matched: false, pointsInside: 0, matchReason: 'none' },
           },
           alpsConfig: {
             centers: {
@@ -944,6 +965,13 @@ describe('POST /api/route-facts', () => {
             polylineLastPoint: { lat: 45.5646, lng: 5.9178 },
             pointCount: 100,
           },
+          waypointProximity: {
+            frejus: true,
+            montBlanc: false,
+            reasons: { frejus: 'waypointProximity', montBlanc: 'none' },
+          },
+          polylineBoundsPlausible: true,
+          alpsMatchReason: { frejus: 'waypointProximity', montBlanc: 'none' },
           samples: [],
         },
       });
@@ -1001,8 +1029,8 @@ describe('POST /api/route-facts', () => {
           polylinePointsChecked: 100,
           alpsMatch: { frejus: false, montBlanc: false },
           alpsMatchDetails: {
-            frejus: { matched: false, pointsInside: 0 },
-            montBlanc: { matched: false, pointsInside: 0 },
+            frejus: { matched: false, pointsInside: 0, matchReason: 'none' },
+            montBlanc: { matched: false, pointsInside: 0, matchReason: 'none' },
           },
           alpsConfig: {
             centers: {
@@ -1024,6 +1052,13 @@ describe('POST /api/route-facts', () => {
             polylineLastPoint: { lat: 45.5646, lng: 5.9178 },
             pointCount: 100,
           },
+          waypointProximity: {
+            frejus: false,
+            montBlanc: false,
+            reasons: { frejus: 'none', montBlanc: 'none' },
+          },
+          polylineBoundsPlausible: true,
+          alpsMatchReason: { frejus: 'none', montBlanc: 'none' },
           samples: [],
         },
       });

@@ -11,11 +11,15 @@ import {
   computePolylineSanityStats,
   getAlpsDebugConfig,
   computeAlpsCenterDistances,
+  checkWaypointProximity,
+  arePolylineBoundsPlausible,
   type AlpsTunnelCheckResult,
   type TunnelMatchDetails,
   type PolylineSanityStats,
   type AlpsDebugConfig,
   type AlpsCenterDistances,
+  type AlpsMatchReason,
+  type WaypointProximityResult,
 } from './flexible-polyline.js';
 
 const ROUTING_API_URL = 'https://router.hereapi.com/v8/routes';
@@ -58,6 +62,15 @@ export interface RouteDebugInfo {
   samples: string[];
   /** Polyline sanity stats for debugging decoder output */
   polylineSanity: PolylineSanityStats;
+  /** Waypoint proximity detection result */
+  waypointProximity: WaypointProximityResult;
+  /** Whether polyline bounds were plausible (used for deciding detection method) */
+  polylineBoundsPlausible: boolean;
+  /** Final match reason for each tunnel (combining polyline and waypoint methods) */
+  alpsMatchReason: {
+    frejus: AlpsMatchReason;
+    montBlanc: AlpsMatchReason;
+  };
 }
 
 export interface RouteTruckResult {
@@ -266,6 +279,8 @@ const EMPTY_TUNNEL_DETAILS: TunnelMatchDetails = {
 interface PolylineAnalysisResult {
   alpsCheck: AlpsTunnelCheckResult;
   sanityStats: PolylineSanityStats;
+  /** Whether decoded polyline bounds are plausible (within Earth coordinate ranges) */
+  boundsPlausible: boolean;
 }
 
 /**
@@ -280,8 +295,8 @@ function analyzePolylines(response: HereRoutingResponse): PolylineAnalysisResult
       montBlanc: false,
       pointsChecked: 0,
       details: {
-        frejus: { ...EMPTY_TUNNEL_DETAILS },
-        montBlanc: { ...EMPTY_TUNNEL_DETAILS },
+        frejus: { ...EMPTY_TUNNEL_DETAILS, matchReason: 'none' },
+        montBlanc: { ...EMPTY_TUNNEL_DETAILS, matchReason: 'none' },
       },
     },
     sanityStats: {
@@ -290,6 +305,7 @@ function analyzePolylines(response: HereRoutingResponse): PolylineAnalysisResult
       polylineLastPoint: null,
       pointCount: 0,
     },
+    boundsPlausible: false,
   };
 
   if (!response.routes || response.routes.length === 0) {
@@ -318,10 +334,34 @@ function analyzePolylines(response: HereRoutingResponse): PolylineAnalysisResult
     return emptyResult;
   }
 
-  // Check all points together for accurate aggregate details
+  // Compute sanity stats and check bounds plausibility
+  const sanityStats = computePolylineSanityStats(allPoints);
+  const boundsPlausible = sanityStats.polylineBounds
+    ? arePolylineBoundsPlausible(sanityStats.polylineBounds)
+    : false;
+
+  // Only run Alps check if bounds are plausible
+  // If bounds are implausible, polyline is corrupted and geofencing will be wrong
+  let alpsCheck: AlpsTunnelCheckResult;
+  if (boundsPlausible) {
+    alpsCheck = checkAlpsTunnels(allPoints);
+  } else {
+    // Return empty result for Alps check - will rely on waypoint proximity instead
+    alpsCheck = {
+      frejus: false,
+      montBlanc: false,
+      pointsChecked: allPoints.length,
+      details: {
+        frejus: { ...EMPTY_TUNNEL_DETAILS, matchReason: 'none' },
+        montBlanc: { ...EMPTY_TUNNEL_DETAILS, matchReason: 'none' },
+      },
+    };
+  }
+
   return {
-    alpsCheck: checkAlpsTunnels(allPoints),
-    sanityStats: computePolylineSanityStats(allPoints),
+    alpsCheck,
+    sanityStats,
+    boundsPlausible,
   };
 }
 
@@ -522,6 +562,30 @@ export function createTruckRouter(client: HereClient) {
       destination
     );
 
+    // Check waypoint proximity as fallback/primary detection method
+    const waypointProximity = checkWaypointProximity(origin, waypoints, destination);
+
+    // Determine final match: use polyline if bounds plausible, otherwise waypoint proximity
+    // Waypoint proximity is a deterministic signal for tunnel intent
+    let finalFrejusMatch: boolean;
+    let finalMontBlancMatch: boolean;
+    let frejusMatchReason: AlpsMatchReason;
+    let montBlancMatchReason: AlpsMatchReason;
+
+    if (polylineAnalysis.boundsPlausible) {
+      // Polyline bounds are plausible, use polyline-based detection
+      finalFrejusMatch = polylineAnalysis.alpsCheck.frejus;
+      finalMontBlancMatch = polylineAnalysis.alpsCheck.montBlanc;
+      frejusMatchReason = polylineAnalysis.alpsCheck.details.frejus.matchReason || 'none';
+      montBlancMatchReason = polylineAnalysis.alpsCheck.details.montBlanc.matchReason || 'none';
+    } else {
+      // Polyline bounds are implausible, rely on waypoint proximity
+      finalFrejusMatch = waypointProximity.frejus;
+      finalMontBlancMatch = waypointProximity.montBlanc;
+      frejusMatchReason = waypointProximity.reasons.frejus;
+      montBlancMatchReason = waypointProximity.reasons.montBlanc;
+    }
+
     return {
       hereResponse: response,
       debug: {
@@ -532,14 +596,20 @@ export function createTruckRouter(client: HereClient) {
         actionsCountTotal: telemetry.actionsCountTotal,
         polylinePointsChecked: polylineAnalysis.alpsCheck.pointsChecked,
         alpsMatch: {
-          frejus: polylineAnalysis.alpsCheck.frejus,
-          montBlanc: polylineAnalysis.alpsCheck.montBlanc,
+          frejus: finalFrejusMatch,
+          montBlanc: finalMontBlancMatch,
         },
         alpsMatchDetails: polylineAnalysis.alpsCheck.details,
         alpsConfig: getAlpsDebugConfig(),
         alpsCenterDistances,
         samples,
         polylineSanity: polylineAnalysis.sanityStats,
+        waypointProximity,
+        polylineBoundsPlausible: polylineAnalysis.boundsPlausible,
+        alpsMatchReason: {
+          frejus: frejusMatchReason,
+          montBlanc: montBlancMatchReason,
+        },
       },
     };
   }

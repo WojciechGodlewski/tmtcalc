@@ -251,8 +251,11 @@ export const MONT_BLANC_CENTER: PolylinePoint = {
   lng: 6.968,   // Tunnel center longitude
 };
 
-/** Distance threshold in km for fallback detection */
+/** Distance threshold in km for fallback detection (polyline points) */
 export const TUNNEL_PROXIMITY_KM = 3.0;
+
+/** Distance threshold in km for waypoint proximity detection */
+export const WAYPOINT_PROXIMITY_THRESHOLD_KM = 3.0;
 
 /**
  * Debug info for Alps tunnel detection configuration
@@ -334,6 +337,90 @@ export function computeAlpsCenterDistances(
 }
 
 /**
+ * Match reason for Alps tunnel detection
+ */
+export type AlpsMatchReason = 'waypointProximity' | 'polylineBbox' | 'polylineDistance' | 'none';
+
+/**
+ * Alps match reason for both tunnels
+ */
+export interface AlpsMatchReasons {
+  frejus: AlpsMatchReason;
+  montBlanc: AlpsMatchReason;
+}
+
+/**
+ * Result of waypoint proximity check for Alps tunnels
+ */
+export interface WaypointProximityResult {
+  frejus: boolean;
+  montBlanc: boolean;
+  reasons: AlpsMatchReasons;
+}
+
+/**
+ * Check if any waypoints (including origin/destination) are within proximity of tunnel centers
+ * This is a deterministic signal for tunnel intent when polyline decoding fails
+ */
+export function checkWaypointProximity(
+  origin: PolylinePoint | null,
+  waypoints: PolylinePoint[],
+  destination: PolylinePoint | null
+): WaypointProximityResult {
+  const allPoints: PolylinePoint[] = [];
+  if (origin) allPoints.push(origin);
+  allPoints.push(...waypoints);
+  if (destination) allPoints.push(destination);
+
+  let frejusMatch = false;
+  let montBlancMatch = false;
+
+  for (const point of allPoints) {
+    const frejusDist = haversineDistanceKm(point, FREJUS_CENTER);
+    const montBlancDist = haversineDistanceKm(point, MONT_BLANC_CENTER);
+
+    if (frejusDist <= WAYPOINT_PROXIMITY_THRESHOLD_KM) {
+      frejusMatch = true;
+    }
+    if (montBlancDist <= WAYPOINT_PROXIMITY_THRESHOLD_KM) {
+      montBlancMatch = true;
+    }
+  }
+
+  return {
+    frejus: frejusMatch,
+    montBlanc: montBlancMatch,
+    reasons: {
+      frejus: frejusMatch ? 'waypointProximity' : 'none',
+      montBlanc: montBlancMatch ? 'waypointProximity' : 'none',
+    },
+  };
+}
+
+/**
+ * Check if polyline bounds are plausible (within Earth coordinate ranges)
+ * Returns false if bounds indicate corrupted/incorrect decoding
+ */
+export function arePolylineBoundsPlausible(bounds: PolylineBounds): boolean {
+  // Valid latitude: -90 to 90
+  // Valid longitude: -180 to 180
+  // Add some tolerance for rounding
+  const MAX_LAT = 90.1;
+  const MIN_LAT = -90.1;
+  const MAX_LNG = 180.1;
+  const MIN_LNG = -180.1;
+
+  return (
+    bounds.minLat >= MIN_LAT &&
+    bounds.maxLat <= MAX_LAT &&
+    bounds.minLng >= MIN_LNG &&
+    bounds.maxLng <= MAX_LNG &&
+    bounds.minLat <= bounds.maxLat &&
+    bounds.minLng <= bounds.maxLng
+  );
+}
+
+/**
  * Calculate haversine distance between two points in kilometers
  */
 export function haversineDistanceKm(p1: PolylinePoint, p2: PolylinePoint): number {
@@ -370,10 +457,12 @@ export interface TunnelMatchDetails {
   pointsInside: number;
   /** First point inside bbox (if any) */
   firstPoint?: PolylinePoint;
-  /** True if matched by proximity fallback */
+  /** True if matched by proximity fallback (polyline point proximity) */
   matchedByProximity?: boolean;
   /** Closest distance to tunnel center in km (if checked) */
   closestDistanceKm?: number;
+  /** Match reason for debugging */
+  matchReason?: AlpsMatchReason;
 }
 
 /**
@@ -458,18 +547,26 @@ export function checkAlpsTunnels(points: PolylinePoint[]): AlpsTunnelCheckResult
   // Determine matches: bbox first, then proximity fallback
   if (frejusDetails.pointsInside > 0) {
     frejusDetails.matched = true;
+    frejusDetails.matchReason = 'polylineBbox';
   } else if (frejusMinDist <= TUNNEL_PROXIMITY_KM) {
     frejusDetails.matched = true;
     frejusDetails.matchedByProximity = true;
     frejusDetails.firstPoint = frejusClosestPoint;
+    frejusDetails.matchReason = 'polylineDistance';
+  } else {
+    frejusDetails.matchReason = 'none';
   }
 
   if (montBlancDetails.pointsInside > 0) {
     montBlancDetails.matched = true;
+    montBlancDetails.matchReason = 'polylineBbox';
   } else if (montBlancMinDist <= TUNNEL_PROXIMITY_KM) {
     montBlancDetails.matched = true;
     montBlancDetails.matchedByProximity = true;
     montBlancDetails.firstPoint = montBlancClosestPoint;
+    montBlancDetails.matchReason = 'polylineDistance';
+  } else {
+    montBlancDetails.matchReason = 'none';
   }
 
   return {
