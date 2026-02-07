@@ -455,4 +455,69 @@ describe('POST /api/quote', () => {
       expect(body.error.message).not.toContain('secret123');
     });
   });
+
+  describe('Alps debug config propagation', () => {
+    it('includes alpsConfig at top level of debug', async () => {
+      // Use PL origin (Poland) which has a pricing model for EU destinations
+      const mockService = createMockHereService('PL', 'IT');
+      // Override geocode to return proper country codes for addresses
+      mockService.geocode = vi.fn()
+        .mockResolvedValueOnce({ lat: 52.23, lng: 21.01, label: 'Warsaw, Poland', countryCode: 'PL' })
+        .mockResolvedValueOnce({ lat: 45.46, lng: 9.19, label: 'Milan, Italy', countryCode: 'IT' });
+
+      const app = buildApp({ hereService: mockService });
+      await app.ready();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/quote',
+        payload: {
+          origin: { address: 'Warsaw, Poland' },
+          destination: { address: 'Milan, Italy' },
+          vehicleProfileId: 'solo_18t_23ep',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+
+      // alpsConfig should be at top level of debug
+      expect(body.debug.alpsConfig).toBeDefined();
+      expect(body.debug.alpsConfig.centers).toBeDefined();
+      expect(body.debug.alpsConfig.centers.frejus).toBeDefined();
+      expect(typeof body.debug.alpsConfig.centers.frejus.lat).toBe('number');
+      expect(body.debug.alpsConfig.bboxes).toBeDefined();
+    });
+
+    it('includes alpsCenterDistances at top level of debug', async () => {
+      // Use PL origin (Poland) which has a pricing model for EU destinations
+      const mockService = createMockHereService('PL', 'IT');
+      // Override geocode to return proper country codes for addresses
+      mockService.geocode = vi.fn()
+        .mockResolvedValueOnce({ lat: 52.23, lng: 21.01, label: 'Warsaw, Poland', countryCode: 'PL' })
+        .mockResolvedValueOnce({ lat: 45.46, lng: 9.19, label: 'Milan, Italy', countryCode: 'IT' });
+
+      const app = buildApp({ hereService: mockService });
+      await app.ready();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/quote',
+        payload: {
+          origin: { address: 'Warsaw, Poland' },
+          destination: { address: 'Milan, Italy' },
+          vehicleProfileId: 'solo_18t_23ep',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+
+      // alpsCenterDistances should be at top level of debug
+      expect(body.debug.alpsCenterDistances).toBeDefined();
+      expect(body.debug.alpsCenterDistances.frejus).toBeDefined();
+      expect(typeof body.debug.alpsCenterDistances.frejus.fromOrigin).toBe('number');
+      expect(Array.isArray(body.debug.alpsCenterDistances.frejus.fromWaypoints)).toBe(true);
+    });
+  });
 });
