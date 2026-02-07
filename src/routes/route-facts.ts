@@ -157,6 +157,36 @@ interface TunnelMatchDetail {
   closestDistanceKm?: number;
 }
 
+interface AlpsCenters {
+  frejus: { lat: number; lng: number };
+  montBlanc: { lat: number; lng: number };
+}
+
+interface AlpsBboxes {
+  frejus: { minLat: number; maxLat: number; minLng: number; maxLng: number };
+  montBlanc: { minLat: number; maxLat: number; minLng: number; maxLng: number };
+}
+
+interface AlpsCenterDistances {
+  frejus: {
+    fromOrigin?: number;
+    fromWaypoints: number[];
+    fromDestination?: number;
+  };
+  montBlanc: {
+    fromOrigin?: number;
+    fromWaypoints: number[];
+    fromDestination?: number;
+  };
+}
+
+interface PolylineSanityStats {
+  polylineBounds: { minLat: number; maxLat: number; minLng: number; maxLng: number } | null;
+  polylineFirstPoint: { lat: number; lng: number } | null;
+  polylineLastPoint: { lat: number; lng: number } | null;
+  pointCount: number;
+}
+
 interface HereResponseDebug {
   sectionsCount: number;
   actionsCountTotal: number;
@@ -169,6 +199,10 @@ interface HereResponseDebug {
     frejus: TunnelMatchDetail;
     montBlanc: TunnelMatchDetail;
   };
+  alpsCenters: AlpsCenters;
+  alpsBboxes: AlpsBboxes;
+  alpsCenterDistances: AlpsCenterDistances;
+  polylineSanity: PolylineSanityStats;
   samples: string[];
 }
 
@@ -333,6 +367,10 @@ export function createRouteFactsHandler(hereService: HereService) {
             polylinePointsChecked: routeResult.debug.polylinePointsChecked,
             alpsMatch: routeResult.debug.alpsMatch,
             alpsMatchDetails: routeResult.debug.alpsMatchDetails,
+            alpsCenters: routeResult.debug.alpsConfig.centers,
+            alpsBboxes: routeResult.debug.alpsConfig.bboxes,
+            alpsCenterDistances: routeResult.debug.alpsCenterDistances,
+            polylineSanity: routeResult.debug.polylineSanity,
             samples: routeResult.debug.samples,
           },
         },
