@@ -69,7 +69,8 @@ function createMockHereService(): HereService {
         viaCount: 0,
         sectionsCount: 1,
         actionsCountTotal: 1,
-        spansCountTotal: 0,
+        polylinePointsChecked: 0,
+        alpsMatch: { frejus: false, montBlanc: false },
         samples: ['action:instruction:Head east on A115'],
       },
     }),
@@ -480,7 +481,8 @@ describe('POST /api/route-facts', () => {
           viaCount: 1,
           sectionsCount: 1,
           actionsCountTotal: 1,
-          spansCountTotal: 0,
+          polylinePointsChecked: 0,
+          alpsMatch: { frejus: false, montBlanc: false },
           samples: ['action:instruction:Head west on A32'],
         },
       });
@@ -512,7 +514,8 @@ describe('POST /api/route-facts', () => {
       expect(body.debug.hereResponse).toBeDefined();
       expect(body.debug.hereResponse.sectionsCount).toBe(1);
       expect(body.debug.hereResponse.actionsCountTotal).toBe(1);
-      expect(body.debug.hereResponse.spansCountTotal).toBe(0);
+      expect(body.debug.hereResponse.polylinePointsChecked).toBe(0);
+      expect(body.debug.hereResponse.alpsMatch).toEqual({ frejus: false, montBlanc: false });
       expect(body.debug.hereResponse.samples).toBeDefined();
       expect(Array.isArray(body.debug.hereResponse.samples)).toBe(true);
     });
@@ -538,7 +541,8 @@ describe('POST /api/route-facts', () => {
           viaCount: 1,
           sectionsCount: 1,
           actionsCountTotal: 0,
-          spansCountTotal: 0,
+          polylinePointsChecked: 0,
+          alpsMatch: { frejus: false, montBlanc: false },
           samples: [],
         },
       });

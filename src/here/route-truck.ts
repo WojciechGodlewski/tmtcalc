@@ -5,6 +5,11 @@
 
 import { type HereClient } from './http-client.js';
 import { getVehicleProfile, type VehicleProfileId } from './vehicle-profiles.js';
+import {
+  decodeFlexiblePolyline,
+  checkAlpsTunnels,
+  type AlpsTunnelCheckResult,
+} from './flexible-polyline.js';
 
 const ROUTING_API_URL = 'https://router.hereapi.com/v8/routes';
 
@@ -26,8 +31,14 @@ export interface RouteDebugInfo {
   viaCount: number;
   sectionsCount: number;
   actionsCountTotal: number;
-  spansCountTotal: number;
-  /** Combined samples from actions and spans for debugging tunnel detection */
+  /** Number of polyline points checked for Alps tunnel detection */
+  polylinePointsChecked: number;
+  /** Alps tunnel bbox match results */
+  alpsMatch: {
+    frejus: boolean;
+    montBlanc: boolean;
+  };
+  /** Sample strings from actions for debugging */
   samples: string[];
 }
 
@@ -53,6 +64,8 @@ export interface HereRouteSection {
   arrival: HereRoutePlace;
   summary: HereRouteSummary;
   transport: HereTransport;
+  /** Encoded flexible polyline for the section */
+  polyline?: string;
   actions?: HereRouteAction[];
   spans?: HereRouteSpan[];
   tolls?: HereTollInfo[];
@@ -199,14 +212,12 @@ function buildMaskedUrl(
 function collectTelemetryCounts(response: HereRoutingResponse): {
   sectionsCount: number;
   actionsCountTotal: number;
-  spansCountTotal: number;
 } {
   let sectionsCount = 0;
   let actionsCountTotal = 0;
-  let spansCountTotal = 0;
 
   if (!response.routes || response.routes.length === 0) {
-    return { sectionsCount, actionsCountTotal, spansCountTotal };
+    return { sectionsCount, actionsCountTotal };
   }
 
   for (const route of response.routes) {
@@ -217,18 +228,62 @@ function collectTelemetryCounts(response: HereRoutingResponse): {
       if (section.actions) {
         actionsCountTotal += section.actions.length;
       }
-      if (section.spans) {
-        spansCountTotal += section.spans.length;
+    }
+  }
+
+  return { sectionsCount, actionsCountTotal };
+}
+
+/**
+ * Check all section polylines for Alps tunnel bbox matches
+ */
+function checkPolylineForAlpsTunnels(response: HereRoutingResponse): AlpsTunnelCheckResult {
+  let totalPointsChecked = 0;
+  let frejusMatch = false;
+  let montBlancMatch = false;
+
+  if (!response.routes || response.routes.length === 0) {
+    return { frejus: false, montBlanc: false, pointsChecked: 0 };
+  }
+
+  for (const route of response.routes) {
+    if (!route.sections) continue;
+
+    for (const section of route.sections) {
+      if (!section.polyline) continue;
+
+      try {
+        const points = decodeFlexiblePolyline(section.polyline);
+        const result = checkAlpsTunnels(points);
+
+        totalPointsChecked += result.pointsChecked;
+        if (result.frejus) frejusMatch = true;
+        if (result.montBlanc) montBlancMatch = true;
+
+        // Early exit if both found
+        if (frejusMatch && montBlancMatch) {
+          return {
+            frejus: true,
+            montBlanc: true,
+            pointsChecked: totalPointsChecked,
+          };
+        }
+      } catch {
+        // Ignore polyline decode errors, continue with other sections
       }
     }
   }
 
-  return { sectionsCount, actionsCountTotal, spansCountTotal };
+  return {
+    frejus: frejusMatch,
+    montBlanc: montBlancMatch,
+    pointsChecked: totalPointsChecked,
+  };
 }
 
 /**
- * Collect sample strings from HERE response for tunnel detection debug
- * Returns up to 30 strings from actions and spans
+ * Collect sample strings from HERE response for debugging
+ * Returns up to 30 strings from actions
  */
 function collectSamples(response: HereRoutingResponse): string[] {
   const sample: string[] = [];
@@ -267,37 +322,6 @@ function collectSamples(response: HereRoutingResponse): string[] {
           }
         }
       }
-
-      // Collect from spans
-      if (section.spans) {
-        for (const span of section.spans) {
-          if (sample.length >= MAX_SAMPLE) break;
-
-          // Collect span names
-          if (span.names) {
-            for (const nameObj of span.names) {
-              if (sample.length >= MAX_SAMPLE) break;
-              if (nameObj.value) {
-                sample.push(`span:name:${nameObj.value}`);
-              }
-            }
-          }
-
-          // Note if span is a tunnel (even without name)
-          if (span.tunnel) {
-            const tunnelInfo = span.names?.[0]?.value || 'unnamed';
-            sample.push(`span:tunnel:${tunnelInfo}`);
-          }
-
-          // Collect route numbers
-          if (span.routeNumbers) {
-            for (const routeNum of span.routeNumbers) {
-              if (sample.length >= MAX_SAMPLE) break;
-              sample.push(`span:routeNumber:${routeNum}`);
-            }
-          }
-        }
-      }
     }
 
     if (sample.length >= MAX_SAMPLE) break;
@@ -332,7 +356,7 @@ export function createTruckRouter(client: HereClient) {
       transportMode: 'truck',
       origin: formatCoords(origin),
       destination: formatCoords(destination),
-      return: 'summary,tolls,polyline,spans,actions',
+      return: 'summary,tolls,polyline,actions',
       // Vehicle dimensions (in cm) and weight (in kg)
       'vehicle[grossWeight]': profile.grossWeight,
       'vehicle[height]': profile.heightCm,
@@ -358,6 +382,7 @@ export function createTruckRouter(client: HereClient) {
 
     // Collect telemetry for debug
     const telemetry = collectTelemetryCounts(response);
+    const alpsCheck = checkPolylineForAlpsTunnels(response);
     const samples = collectSamples(response);
 
     return {
@@ -368,7 +393,11 @@ export function createTruckRouter(client: HereClient) {
         viaCount: waypoints.length,
         sectionsCount: telemetry.sectionsCount,
         actionsCountTotal: telemetry.actionsCountTotal,
-        spansCountTotal: telemetry.spansCountTotal,
+        polylinePointsChecked: alpsCheck.pointsChecked,
+        alpsMatch: {
+          frejus: alpsCheck.frejus,
+          montBlanc: alpsCheck.montBlanc,
+        },
         samples,
       },
     };

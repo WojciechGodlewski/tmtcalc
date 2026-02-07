@@ -104,7 +104,8 @@ function createMockHereService(
         viaCount: 0,
         sectionsCount: 1,
         actionsCountTotal: mockResponse.routes[0]?.sections[0]?.actions?.length ?? 0,
-        spansCountTotal: 0,
+        polylinePointsChecked: 0,
+        alpsMatch: { frejus: false, montBlanc: false },
         samples,
       },
     }),
@@ -351,7 +352,8 @@ describe('POST /api/quote', () => {
   });
 
   describe('surcharges', () => {
-    it('applies tunnel surcharge for Fréjus tunnel', async () => {
+    it('does not apply tunnel surcharge without polyline geofencing', async () => {
+      // Even with tunnel mention in action text, Alps surcharge requires polyline geofencing
       const mockService = createMockHereService({
         tollCountries: ['ITA', 'FRA'],
         hasTunnel: true,
@@ -375,9 +377,11 @@ describe('POST /api/quote', () => {
       expect(response.statusCode).toBe(200);
       const body = response.json();
 
+      // Alps surcharge is NOT applied because crossesAlps requires polyline geofencing
+      // Action text alone is not sufficient for surcharge triggering
       expect(body.quote.lineItems.surcharges.some(
         (s: { type: string }) => s.type === 'alpsTunnel'
-      )).toBe(true);
+      )).toBe(false);
     });
   });
 

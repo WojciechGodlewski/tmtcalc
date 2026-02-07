@@ -152,7 +152,11 @@ interface HereRequestDebug {
 interface HereResponseDebug {
   sectionsCount: number;
   actionsCountTotal: number;
-  spansCountTotal: number;
+  polylinePointsChecked: number;
+  alpsMatch: {
+    frejus: boolean;
+    montBlanc: boolean;
+  };
   samples: string[];
 }
 
@@ -314,7 +318,8 @@ export function createRouteFactsHandler(hereService: HereService) {
           hereResponse: {
             sectionsCount: routeResult.debug.sectionsCount,
             actionsCountTotal: routeResult.debug.actionsCountTotal,
-            spansCountTotal: routeResult.debug.spansCountTotal,
+            polylinePointsChecked: routeResult.debug.polylinePointsChecked,
+            alpsMatch: routeResult.debug.alpsMatch,
             samples: routeResult.debug.samples,
           },
         },

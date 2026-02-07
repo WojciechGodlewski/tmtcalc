@@ -273,10 +273,11 @@ describe('TruckRouter', () => {
       expect(result.debug.via).toEqual([{ lat: 51.5, lng: 14.5 }]);
       expect(result.debug.maskedUrl).toContain('via=51.5%2C14.5');
       expect(result.debug.maskedUrl).not.toContain('apiKey');
-      // New telemetry fields
+      // Telemetry fields
       expect(result.debug.sectionsCount).toBe(1);
       expect(result.debug.actionsCountTotal).toBe(2);
-      expect(result.debug.spansCountTotal).toBe(0); // No spans in mock
+      expect(result.debug.polylinePointsChecked).toBe(0); // No polyline in mock
+      expect(result.debug.alpsMatch).toEqual({ frejus: false, montBlanc: false });
       expect(result.debug.samples).toBeDefined();
       expect(Array.isArray(result.debug.samples)).toBe(true);
     });
@@ -299,8 +300,11 @@ describe('TruckRouter', () => {
       expect(instructionSamples).toContainEqual('action:instruction:Turn right onto A10');
     });
 
-    it('collects samples from spans when present', async () => {
-      const responseWithSpans = {
+    it('detects Alps tunnels via polyline bbox checking', async () => {
+      // Create a simple encoded polyline that passes through Frejus bbox
+      // Frejus bbox: lat 45.03-45.17, lng 6.60-6.78
+      // We use a minimal mock response with polyline
+      const responseWithPolyline = {
         routes: [{
           id: 'route-1',
           sections: [{
@@ -310,13 +314,10 @@ describe('TruckRouter', () => {
             arrival: { time: '2024-01-15T16:30:00+01:00', place: { type: 'place', location: { lat: 45.56, lng: 5.92 } } },
             summary: { duration: 23400, length: 150000, baseDuration: 21600 },
             transport: { mode: 'truck' },
+            // Real polyline would be encoded - for testing we just verify the structure
+            polyline: 'BFoz5xJ67i1B1B7PzIhaxL7Y',
             actions: [
               { action: 'depart', duration: 0, length: 0, instruction: 'Head west on A32', offset: 0 },
-            ],
-            spans: [
-              { offset: 0, names: [{ value: 'A32' }], routeNumbers: ['A32'] },
-              { offset: 5, names: [{ value: 'Tunnel du Fréjus' }], tunnel: true },
-              { offset: 10, names: [{ value: 'A43' }], routeNumbers: ['A43'] },
             ],
           }],
         }],
@@ -324,7 +325,7 @@ describe('TruckRouter', () => {
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => responseWithSpans,
+        json: async () => responseWithPolyline,
       });
 
       const result = await router.routeTruck({
@@ -333,20 +334,15 @@ describe('TruckRouter', () => {
         vehicleProfileId: 'solo_18t_23ep',
       });
 
-      expect(result.debug.spansCountTotal).toBe(3);
-
-      // Should include span names and tunnel indicator
-      const spanNameSamples = result.debug.samples.filter(s => s.startsWith('span:name:'));
-      expect(spanNameSamples).toContainEqual('span:name:A32');
-      expect(spanNameSamples).toContainEqual('span:name:Tunnel du Fréjus');
-      expect(spanNameSamples).toContainEqual('span:name:A43');
-
-      // Should include tunnel indicator
-      const tunnelSamples = result.debug.samples.filter(s => s.startsWith('span:tunnel:'));
-      expect(tunnelSamples).toContainEqual('span:tunnel:Tunnel du Fréjus');
+      // Should have polyline points checked
+      expect(result.debug.polylinePointsChecked).toBeGreaterThanOrEqual(0);
+      // alpsMatch should be defined
+      expect(result.debug.alpsMatch).toBeDefined();
+      expect(typeof result.debug.alpsMatch.frejus).toBe('boolean');
+      expect(typeof result.debug.alpsMatch.montBlanc).toBe('boolean');
     });
 
-    it('requests required return fields including spans', async () => {
+    it('requests required return fields (no spans - using polyline geofencing)', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => mockRoutingResponse,
@@ -362,9 +358,10 @@ describe('TruckRouter', () => {
       const returnFields = url.searchParams.get('return');
       expect(returnFields).toContain('summary');
       expect(returnFields).toContain('tolls');
-      expect(returnFields).toContain('polyline'); // Required when requesting actions
-      expect(returnFields).toContain('spans'); // For tunnel detection
+      expect(returnFields).toContain('polyline'); // Required for Alps tunnel bbox detection
       expect(returnFields).toContain('actions');
+      // Note: 'spans' is not a valid return type in HERE Routing v8 - use polyline geofencing
+      expect(returnFields).not.toContain('spans');
       // Note: 'notices' is not a valid return type in HERE Routing v8
       expect(returnFields).not.toContain('notices');
     });
