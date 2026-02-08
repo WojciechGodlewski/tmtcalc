@@ -111,6 +111,7 @@ function createMockHereService(): HereService {
           validPolylineCount: 0,
         },
         polylineSwapApplied: false,
+        decodedFirstTwoPoints: null,
       },
     }),
     clearGeocodeCache: vi.fn(),
@@ -562,6 +563,7 @@ describe('POST /api/route-facts', () => {
             validPolylineCount: 0,
           },
           polylineSwapApplied: false,
+          decodedFirstTwoPoints: null,
         },
       });
 
@@ -661,6 +663,7 @@ describe('POST /api/route-facts', () => {
             validPolylineCount: 0,
           },
           polylineSwapApplied: false,
+          decodedFirstTwoPoints: null,
         },
       });
 
@@ -1005,6 +1008,7 @@ describe('POST /api/route-facts', () => {
             validPolylineCount: 0,
           },
           polylineSwapApplied: false,
+          decodedFirstTwoPoints: null,
         },
       });
 
@@ -1102,6 +1106,7 @@ describe('POST /api/route-facts', () => {
             validPolylineCount: 1,
           },
           polylineSwapApplied: false,
+          decodedFirstTwoPoints: null,
         },
       });
 
