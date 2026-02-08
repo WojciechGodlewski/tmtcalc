@@ -241,6 +241,57 @@ export function decodeFlexiblePolyline(encoded: string): PolylinePoint[] {
     }
   }
 
+  // Auto-detect and correct swapped lat/lng for European routes
+  // This handles cases where the decoder produces {lat: small, lng: ~45} instead of {lat: ~45, lng: small}
+  if (points.length > 0) {
+    const checkPoints = points.slice(0, Math.min(50, points.length));
+
+    // Compute bounds of the check points
+    let minLat = Infinity, maxLat = -Infinity;
+    let minLng = Infinity, maxLng = -Infinity;
+
+    for (const p of checkPoints) {
+      if (p.lat < minLat) minLat = p.lat;
+      if (p.lat > maxLat) maxLat = p.lat;
+      if (p.lng < minLng) minLng = p.lng;
+      if (p.lng > maxLng) maxLng = p.lng;
+    }
+
+    // Check if coordinates look swapped for European routes:
+    // - Current "lat" values are small (< 15) which would be lng values
+    // - Current "lng" values are in latitude range for Europe (30-70)
+    const looksSwapped = maxLat < 15 && minLng > 30 && maxLng < 75;
+
+    // Also check for "lng=0 at origin" case:
+    // First point has lng near 0, but other points have lat in 40-50 range (which is actually lng for Europe)
+    const firstPoint = points[0];
+    const hasZeroLngOrigin = Math.abs(firstPoint.lng) < 1 &&
+      checkPoints.length > 1 &&
+      checkPoints.some(p => p.lat > 30 && p.lat < 75);
+
+    if (looksSwapped || hasZeroLngOrigin) {
+      // Compute what bounds would be after swapping
+      const swappedMinLat = minLng;
+      const swappedMaxLat = maxLng;
+      const swappedMinLng = minLat;
+      const swappedMaxLng = maxLat;
+
+      // Validate: swapped lat should be in European range [30..70]
+      // and swapped lng should be in reasonable range [-20..40]
+      const swappedLatPlausible = swappedMinLat >= 25 && swappedMaxLat <= 75;
+      const swappedLngPlausible = swappedMinLng >= -25 && swappedMaxLng <= 45;
+
+      if (swappedLatPlausible && swappedLngPlausible) {
+        // Apply swap to ALL points
+        for (const p of points) {
+          const tmp = p.lat;
+          p.lat = p.lng;
+          p.lng = tmp;
+        }
+      }
+    }
+  }
+
   return points;
 }
 
