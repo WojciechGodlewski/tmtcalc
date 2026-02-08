@@ -75,6 +75,8 @@ export interface RouteDebugInfo {
   polylineInputDiagnostics: PolylineInputDiagnostics;
   /** Whether lat/lng swap was applied to fix European routes */
   polylineSwapApplied: boolean;
+  /** First two points as decoded (before any swap), for runtime debugging */
+  decodedFirstTwoPoints: Array<{ lat: number; lng: number }> | null;
 }
 
 /**
@@ -310,6 +312,8 @@ interface PolylineAnalysisResult {
   inputDiagnostics: PolylineInputDiagnostics;
   /** Whether lat/lng swap was applied */
   swapApplied: boolean;
+  /** First two points as decoded (before any swap), for runtime debugging */
+  decodedFirstTwoPoints: Array<{ lat: number; lng: number }> | null;
 }
 
 /**
@@ -372,6 +376,7 @@ function analyzePolylines(response: HereRoutingResponse): PolylineAnalysisResult
     boundsPlausible: false,
     inputDiagnostics: EMPTY_DIAGNOSTICS,
     swapApplied: false,
+    decodedFirstTwoPoints: null,
   };
 
   if (!response.routes || response.routes.length === 0) {
@@ -457,6 +462,9 @@ function analyzePolylines(response: HereRoutingResponse): PolylineAnalysisResult
     return { ...emptyResult, inputDiagnostics };
   }
 
+  // Capture first two points as decoded (before any swap) for runtime debugging
+  const decodedFirstTwoPoints = allPoints.slice(0, 2).map(p => ({ lat: p.lat, lng: p.lng }));
+
   // Check if lat/lng might be swapped for European routes
   let swapApplied = false;
   const firstPoint = allPoints[0];
@@ -517,6 +525,7 @@ function analyzePolylines(response: HereRoutingResponse): PolylineAnalysisResult
     boundsPlausible,
     inputDiagnostics,
     swapApplied,
+    decodedFirstTwoPoints,
   };
 }
 
@@ -785,6 +794,7 @@ export function createTruckRouter(client: HereClient) {
         },
         polylineInputDiagnostics: polylineAnalysis.inputDiagnostics,
         polylineSwapApplied: polylineAnalysis.swapApplied,
+        decodedFirstTwoPoints: polylineAnalysis.decodedFirstTwoPoints,
       },
     };
   }

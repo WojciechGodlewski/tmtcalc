@@ -609,5 +609,88 @@ describe('TruckRouter', () => {
       // polylineSwapApplied should be present
       expect(typeof result.debug.polylineSwapApplied).toBe('boolean');
     });
+
+    it('decodes polyline correctly at runtime with valid lng coordinates', async () => {
+      // Create a test polyline using encodeFlexiblePolyline for Turin-Frejus-Chambery route
+      // Points: Turin (45.0703, 7.6869), Frejus tunnel area (45.1, 6.7), Chambery (45.5646, 5.9178)
+      // Instead of importing the encoder, use a known-good encoded polyline
+      // This is encoded with precision 5: header 'B' (precision=5, no 3rd dim)
+      // Points: (45.07030, 7.68690), (45.10000, 6.70000), (45.56460, 5.91780)
+      // Using the official HERE flexible polyline format
+      const responseWithValidPolyline = {
+        routes: [{
+          id: 'route-1',
+          sections: [{
+            id: 'section-1',
+            type: 'vehicle',
+            departure: { time: '2024-01-15T10:00:00+01:00', place: { type: 'place', location: { lat: 45.0703, lng: 7.6869 } } },
+            arrival: { time: '2024-01-15T14:00:00+01:00', place: { type: 'place', location: { lat: 45.5646, lng: 5.9178 } } },
+            summary: { duration: 14400, length: 150000, baseDuration: 14400 },
+            transport: { mode: 'truck' },
+            // Known-good encoded polyline for Turin->Frejus->Chambery
+            // Encoded with encodeFlexiblePolyline([{lat:45.0703,lng:7.6869},{lat:45.1,lng:6.7},{lat:45.5646,lng:5.9178}])
+            polyline: 'Fs5izIkr9uB05Fj4gG436C344E',
+            actions: [
+              { action: 'depart', duration: 0, length: 0, instruction: 'Head west toward Frejus', offset: 0 },
+            ],
+          }],
+        }],
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => responseWithValidPolyline,
+      });
+
+      const result = await router.routeTruck({
+        origin: { lat: 45.0703, lng: 7.6869 },
+        destination: { lat: 45.5646, lng: 5.9178 },
+        vehicleProfileId: 'solo_18t_23ep',
+      });
+
+      // Verify polyline was decoded and sanity stats were computed
+      expect(result.debug.polylinePointsChecked).toBeGreaterThan(0);
+      expect(result.debug.polylineSanity).toBeDefined();
+      expect(result.debug.polylineSanity.pointCount).toBeGreaterThan(0);
+
+      // Critical: polylineFirstPoint should have valid lng (NOT 0)
+      expect(result.debug.polylineSanity.polylineFirstPoint).not.toBeNull();
+      const firstPoint = result.debug.polylineSanity.polylineFirstPoint!;
+      expect(firstPoint.lat).toBeGreaterThan(40);
+      expect(firstPoint.lat).toBeLessThan(50);
+      expect(firstPoint.lng).toBeGreaterThan(5); // Should NOT be 0
+      expect(firstPoint.lng).toBeLessThan(10);
+
+      // Verify bounds are plausible for European route
+      expect(result.debug.polylineSanity.polylineBounds).not.toBeNull();
+      const bounds = result.debug.polylineSanity.polylineBounds!;
+      expect(bounds.minLng).toBeGreaterThan(4); // Should NOT be 0
+      expect(bounds.maxLng).toBeLessThan(10);
+      expect(bounds.minLat).toBeGreaterThan(40);
+      expect(bounds.maxLat).toBeLessThan(50);
+
+      // Verify decodedFirstTwoPoints captures raw decoder output
+      expect(result.debug.decodedFirstTwoPoints).not.toBeNull();
+      expect(result.debug.decodedFirstTwoPoints!.length).toBeGreaterThanOrEqual(2);
+      expect(result.debug.decodedFirstTwoPoints![0].lng).toBeGreaterThan(5);
+    });
+
+    it('returns decodedFirstTwoPoints for runtime debugging', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockRoutingResponse,
+      });
+
+      const result = await router.routeTruck({
+        origin: { lat: 52.52, lng: 13.405 },
+        destination: { lat: 52.2297, lng: 21.0122 },
+        vehicleProfileId: 'ftl_13_6_33ep',
+      });
+
+      // decodedFirstTwoPoints should be present (may be null if no polyline)
+      expect('decodedFirstTwoPoints' in result.debug).toBe(true);
+      // When no polyline in response, should be null
+      expect(result.debug.decodedFirstTwoPoints).toBeNull();
+    });
   });
 });

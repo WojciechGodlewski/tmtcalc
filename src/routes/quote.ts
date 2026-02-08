@@ -213,6 +213,8 @@ interface HereResponseDebug {
   polylineInputDiagnostics: PolylineInputDiagnostics;
   /** Whether lat/lng swap was applied to fix European routes */
   polylineSwapApplied: boolean;
+  /** First two points as decoded (before any swap), for runtime debugging */
+  decodedFirstTwoPoints: Array<{ lat: number; lng: number }> | null;
 }
 
 interface AlpsConfig {
@@ -411,6 +413,7 @@ export function createQuoteHandler(hereService: HereService) {
             samples: routeResult.debug.samples,
             polylineInputDiagnostics: routeResult.debug.polylineInputDiagnostics,
             polylineSwapApplied: routeResult.debug.polylineSwapApplied,
+            decodedFirstTwoPoints: routeResult.debug.decodedFirstTwoPoints,
           },
           alpsConfig: routeResult.debug.alpsConfig,
           alpsCenterDistances: routeResult.debug.alpsCenterDistances,
