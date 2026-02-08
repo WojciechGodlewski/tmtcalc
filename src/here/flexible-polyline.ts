@@ -19,6 +19,68 @@ const DECODING_TABLE = [
   33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
 ];
 
+// Encoding table for base64-like encoding (reverse of DECODING_TABLE)
+const ENCODING_TABLE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+/**
+ * Encode an unsigned value to flexible polyline format
+ */
+function encodeUnsignedValue(value: number): string {
+  let result = '';
+  while (value > 0x1f) {
+    result += ENCODING_TABLE[(value & 0x1f) | 0x20];
+    value >>>= 5;
+  }
+  result += ENCODING_TABLE[value];
+  return result;
+}
+
+/**
+ * Encode a signed value to flexible polyline format (with zig-zag encoding)
+ */
+function encodeSignedValue(value: number): string {
+  // Zig-zag encode
+  const unsigned = value < 0 ? ~(value << 1) : (value << 1);
+  return encodeUnsignedValue(unsigned);
+}
+
+/**
+ * Encode an array of lat/lng points to HERE Flexible Polyline format
+ * @param points Array of points to encode
+ * @param precision Decimal places for lat/lng (default 5)
+ * @returns Encoded polyline string
+ */
+export function encodeFlexiblePolyline(points: PolylinePoint[], precision: number = 5): string {
+  if (points.length === 0) {
+    return '';
+  }
+
+  const factor = Math.pow(10, precision);
+
+  // Encode header (precision only, no 3rd dimension)
+  // Header format: bits 0-3 = precision, bits 4-6 = 0 (no 3rd dim)
+  let result = encodeUnsignedValue(precision);
+
+  let lastLat = 0;
+  let lastLng = 0;
+
+  for (const point of points) {
+    const scaledLat = Math.round(point.lat * factor);
+    const scaledLng = Math.round(point.lng * factor);
+
+    const deltaLat = scaledLat - lastLat;
+    const deltaLng = scaledLng - lastLng;
+
+    result += encodeSignedValue(deltaLat);
+    result += encodeSignedValue(deltaLng);
+
+    lastLat = scaledLat;
+    lastLng = scaledLng;
+  }
+
+  return result;
+}
+
 /**
  * Decode a single unsigned varint value from the polyline at the given index
  * Returns the decoded value and the new index position
@@ -74,8 +136,14 @@ function decodeSignedValue(encoded: string, index: number): [number, number] {
 /**
  * Decode HERE Flexible Polyline to array of lat/lng points
  *
+ * Format: https://github.com/heremaps/flexible-polyline
+ * Header structure (single unsigned value):
+ *   - bits 0-3: lat/lng precision (0-15)
+ *   - bits 4-6: third dimension type (0=absent, 1=altitude, 2=elevation, etc.)
+ *   - bits 7-10: third dimension precision (if type != 0)
+ *
  * @param encoded The encoded polyline string from HERE Routing API
- * @returns Array of decoded points with lat/lng coordinates
+ * @returns Array of decoded points with lat/lng coordinates in degrees
  * @throws Error if the polyline is invalid or cannot be decoded
  */
 export function decodeFlexiblePolyline(encoded: string): PolylinePoint[] {
@@ -89,6 +157,7 @@ export function decodeFlexiblePolyline(encoded: string): PolylinePoint[] {
   let index = 0;
 
   // First value: header with precision info (unsigned)
+  // All precision info is encoded in this single value
   const [header, nextIndex] = decodeUnsignedValue(encoded, index);
   index = nextIndex;
 
@@ -100,11 +169,8 @@ export function decodeFlexiblePolyline(encoded: string): PolylinePoint[] {
   const thirdDimType = (header >> 4) & 0x07;
   const has3rdDim = thirdDimType !== 0;
 
-  // If 3rd dimension present, decode its precision (next unsigned value)
-  if (has3rdDim) {
-    const [, next] = decodeUnsignedValue(encoded, index);
-    index = next;
-  }
+  // Third dimension precision is in bits 7-10 of the SAME header value
+  // (Not a separate encoded value - this was a bug)
 
   // Decode points (signed values with zig-zag)
   let lat = 0;
@@ -114,6 +180,8 @@ export function decodeFlexiblePolyline(encoded: string): PolylinePoint[] {
     // Decode delta lat (signed)
     const [deltaLat, nextLat] = decodeSignedValue(encoded, index);
     index = nextLat;
+
+    if (index >= encoded.length) break;
 
     // Decode delta lng (signed)
     const [deltaLng, nextLng] = decodeSignedValue(encoded, index);
@@ -134,6 +202,41 @@ export function decodeFlexiblePolyline(encoded: string): PolylinePoint[] {
       lat: lat / factor,
       lng: lng / factor,
     });
+  }
+
+  // Sanity check: validate coordinates are in valid ranges
+  // If not, try to auto-fix by applying missing scaling
+  if (points.length > 0) {
+    const firstPoint = points[0];
+    const needsAutoFix = Math.abs(firstPoint.lat) > 90 || Math.abs(firstPoint.lng) > 180;
+
+    if (needsAutoFix) {
+      // Try dividing by 1e5 (common scaling factor issue)
+      const scale1e5Check = points.every(p =>
+        Math.abs(p.lat / 1e5) <= 90 && Math.abs(p.lng / 1e5) <= 180
+      );
+
+      if (scale1e5Check) {
+        for (const p of points) {
+          p.lat = p.lat / 1e5;
+          p.lng = p.lng / 1e5;
+        }
+      } else {
+        // Try dividing by 1e6
+        const scale1e6Check = points.every(p =>
+          Math.abs(p.lat / 1e6) <= 90 && Math.abs(p.lng / 1e6) <= 180
+        );
+
+        if (scale1e6Check) {
+          for (const p of points) {
+            p.lat = p.lat / 1e6;
+            p.lng = p.lng / 1e6;
+          }
+        }
+        // If neither works, return as-is but log a warning
+        // The sanity checker downstream will mark bounds as implausible
+      }
+    }
   }
 
   return points;

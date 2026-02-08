@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   decodeFlexiblePolyline,
+  encodeFlexiblePolyline,
   isPointInBBox,
   checkAlpsTunnels,
   checkAlpsTunnelsFromPolyline,
@@ -55,6 +56,124 @@ describe('decodeFlexiblePolyline', () => {
     } catch {
       // Some malformed inputs may throw, which is acceptable
     }
+  });
+});
+
+describe('encodeFlexiblePolyline and decode round-trip', () => {
+  it('encodes and decodes Turin-Bardonecchia-Chambery route correctly', () => {
+    // Known points in the Alps
+    const originalPoints: PolylinePoint[] = [
+      { lat: 45.06235, lng: 7.67993 },  // Turin
+      { lat: 45.07948, lng: 6.69965 },  // Bardonecchia (near Frejus)
+      { lat: 45.56664, lng: 5.9209 },   // Chambery
+    ];
+
+    // Encode with precision 5
+    const encoded = encodeFlexiblePolyline(originalPoints, 5);
+
+    // Decode
+    const decoded = decodeFlexiblePolyline(encoded);
+
+    // Should have same number of points
+    expect(decoded.length).toBe(originalPoints.length);
+
+    // Each point should match within precision tolerance (1e-5)
+    for (let i = 0; i < originalPoints.length; i++) {
+      expect(decoded[i].lat).toBeCloseTo(originalPoints[i].lat, 4);
+      expect(decoded[i].lng).toBeCloseTo(originalPoints[i].lng, 4);
+    }
+  });
+
+  it('decoded points are within plausible lat/lng ranges', () => {
+    const originalPoints: PolylinePoint[] = [
+      { lat: 45.06235, lng: 7.67993 },  // Turin
+      { lat: 45.07948, lng: 6.69965 },  // Bardonecchia
+      { lat: 45.56664, lng: 5.9209 },   // Chambery
+    ];
+
+    const encoded = encodeFlexiblePolyline(originalPoints, 5);
+    const decoded = decodeFlexiblePolyline(encoded);
+
+    for (const point of decoded) {
+      expect(Math.abs(point.lat)).toBeLessThanOrEqual(90);
+      expect(Math.abs(point.lng)).toBeLessThanOrEqual(180);
+    }
+  });
+
+  it('computed bounds are within valid Earth coordinate ranges', () => {
+    const originalPoints: PolylinePoint[] = [
+      { lat: 45.06235, lng: 7.67993 },  // Turin
+      { lat: 45.07948, lng: 6.69965 },  // Bardonecchia
+      { lat: 45.56664, lng: 5.9209 },   // Chambery
+    ];
+
+    const encoded = encodeFlexiblePolyline(originalPoints, 5);
+    const decoded = decodeFlexiblePolyline(encoded);
+    const stats = computePolylineSanityStats(decoded);
+
+    expect(stats.polylineBounds).not.toBeNull();
+    const bounds = stats.polylineBounds!;
+
+    // Bounds should be within valid Earth ranges
+    expect(bounds.minLat).toBeGreaterThanOrEqual(-90);
+    expect(bounds.maxLat).toBeLessThanOrEqual(90);
+    expect(bounds.minLng).toBeGreaterThanOrEqual(-180);
+    expect(bounds.maxLng).toBeLessThanOrEqual(180);
+
+    // Bounds should plausibly cover the original points
+    expect(bounds.minLat).toBeLessThanOrEqual(45.07);
+    expect(bounds.maxLat).toBeGreaterThanOrEqual(45.56);
+    expect(bounds.minLng).toBeLessThanOrEqual(5.93);
+    expect(bounds.maxLng).toBeGreaterThanOrEqual(7.67);
+  });
+
+  it('handles single point', () => {
+    const points: PolylinePoint[] = [{ lat: 45.0, lng: 7.0 }];
+    const encoded = encodeFlexiblePolyline(points, 5);
+    const decoded = decodeFlexiblePolyline(encoded);
+
+    expect(decoded.length).toBe(1);
+    expect(decoded[0].lat).toBeCloseTo(45.0, 4);
+    expect(decoded[0].lng).toBeCloseTo(7.0, 4);
+  });
+
+  it('handles empty array', () => {
+    const encoded = encodeFlexiblePolyline([], 5);
+    expect(encoded).toBe('');
+    expect(decodeFlexiblePolyline(encoded)).toEqual([]);
+  });
+
+  it('handles negative coordinates', () => {
+    const points: PolylinePoint[] = [
+      { lat: -33.8688, lng: 151.2093 },  // Sydney
+      { lat: 40.7128, lng: -74.0060 },   // New York
+    ];
+    const encoded = encodeFlexiblePolyline(points, 5);
+    const decoded = decodeFlexiblePolyline(encoded);
+
+    expect(decoded.length).toBe(2);
+    expect(decoded[0].lat).toBeCloseTo(-33.8688, 4);
+    expect(decoded[0].lng).toBeCloseTo(151.2093, 4);
+    expect(decoded[1].lat).toBeCloseTo(40.7128, 4);
+    expect(decoded[1].lng).toBeCloseTo(-74.0060, 4);
+  });
+
+  it('handles different precision levels', () => {
+    const points: PolylinePoint[] = [
+      { lat: 45.123456789, lng: 7.987654321 },
+    ];
+
+    // Test precision 5 (common for HERE)
+    const encoded5 = encodeFlexiblePolyline(points, 5);
+    const decoded5 = decodeFlexiblePolyline(encoded5);
+    expect(decoded5[0].lat).toBeCloseTo(45.12346, 5);
+    expect(decoded5[0].lng).toBeCloseTo(7.98765, 5);
+
+    // Test precision 6 (higher precision)
+    const encoded6 = encodeFlexiblePolyline(points, 6);
+    const decoded6 = decodeFlexiblePolyline(encoded6);
+    expect(decoded6[0].lat).toBeCloseTo(45.123457, 6);
+    expect(decoded6[0].lng).toBeCloseTo(7.987654, 6);
   });
 });
 
