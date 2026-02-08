@@ -71,6 +71,31 @@ export interface RouteDebugInfo {
     frejus: AlpsMatchReason;
     montBlanc: AlpsMatchReason;
   };
+  /** Diagnostics for polyline input extraction from HERE response */
+  polylineInputDiagnostics: PolylineInputDiagnostics;
+  /** Whether lat/lng swap was applied to fix European routes */
+  polylineSwapApplied: boolean;
+}
+
+/**
+ * Diagnostics for polyline extraction from HERE response sections
+ */
+export interface PolylineInputDiagnostics {
+  /** Info about each section's polyline field */
+  sections: Array<{
+    idx: number;
+    type: string;
+    length: number | null;
+    prefix: string | null;
+  }>;
+  /** Index of chosen section (longest polyline) or null if none */
+  chosenIdx: number | null;
+  /** Length of chosen polyline string */
+  chosenLength: number | null;
+  /** First 60 chars of chosen polyline */
+  chosenPrefix: string | null;
+  /** Total sections with valid polyline strings */
+  validPolylineCount: number;
 }
 
 export interface RouteTruckResult {
@@ -281,6 +306,45 @@ interface PolylineAnalysisResult {
   sanityStats: PolylineSanityStats;
   /** Whether decoded polyline bounds are plausible (within Earth coordinate ranges) */
   boundsPlausible: boolean;
+  /** Diagnostics for polyline input extraction */
+  inputDiagnostics: PolylineInputDiagnostics;
+  /** Whether lat/lng swap was applied */
+  swapApplied: boolean;
+}
+
+/**
+ * Empty diagnostics for when no polylines are found
+ */
+const EMPTY_DIAGNOSTICS: PolylineInputDiagnostics = {
+  sections: [],
+  chosenIdx: null,
+  chosenLength: null,
+  chosenPrefix: null,
+  validPolylineCount: 0,
+};
+
+/**
+ * Check if decoded points look like swapped lat/lng for European routes
+ * Returns true if lat appears to be in longitude range and vice versa
+ */
+function looksSwappedForEurope(firstPoint: { lat: number; lng: number }): boolean {
+  // European routes: lat should be ~40-60, lng should be ~-10 to 20
+  // If lat is between -10..10 AND lng is between 30..70, likely swapped
+  return (
+    firstPoint.lat >= -10 && firstPoint.lat <= 10 &&
+    firstPoint.lng >= 30 && firstPoint.lng <= 70
+  );
+}
+
+/**
+ * Check if bounds look plausible for European routes after potential swap
+ */
+function boundsPlausibleForEurope(bounds: { minLat: number; maxLat: number; minLng: number; maxLng: number }): boolean {
+  // European routes: lat 30-70, lng -20 to 40
+  return (
+    bounds.minLat >= 30 && bounds.maxLat <= 70 &&
+    bounds.minLng >= -20 && bounds.maxLng <= 40
+  );
 }
 
 /**
@@ -306,32 +370,121 @@ function analyzePolylines(response: HereRoutingResponse): PolylineAnalysisResult
       pointCount: 0,
     },
     boundsPlausible: false,
+    inputDiagnostics: EMPTY_DIAGNOSTICS,
+    swapApplied: false,
   };
 
   if (!response.routes || response.routes.length === 0) {
     return emptyResult;
   }
 
-  // Aggregate all polyline points from all sections
-  const allPoints: Array<{ lat: number; lng: number }> = [];
+  // Collect diagnostics about each section's polyline field
+  const sectionDiagnostics: PolylineInputDiagnostics['sections'] = [];
+  const validPolylines: Array<{ idx: number; polyline: string }> = [];
 
   for (const route of response.routes) {
     if (!route.sections) continue;
 
-    for (const section of route.sections) {
-      if (!section.polyline) continue;
+    for (let idx = 0; idx < route.sections.length; idx++) {
+      const section = route.sections[idx];
+      const p = section.polyline;
+      const pType = typeof p;
 
-      try {
-        const points = decodeFlexiblePolyline(section.polyline);
-        allPoints.push(...points);
-      } catch {
-        // Ignore polyline decode errors, continue with other sections
+      let length: number | null = null;
+      let prefix: string | null = null;
+
+      if (pType === 'string' && p) {
+        length = p.length;
+        prefix = p.slice(0, 60);
+        if (p.length > 0) {
+          validPolylines.push({ idx, polyline: p });
+        }
+      } else if (p !== undefined && p !== null) {
+        // Non-string polyline - capture what it is for debugging
+        prefix = JSON.stringify(p).slice(0, 60);
       }
+
+      sectionDiagnostics.push({
+        idx,
+        type: pType,
+        length,
+        prefix,
+      });
     }
   }
 
+  const inputDiagnostics: PolylineInputDiagnostics = {
+    sections: sectionDiagnostics,
+    chosenIdx: null,
+    chosenLength: null,
+    chosenPrefix: null,
+    validPolylineCount: validPolylines.length,
+  };
+
+  if (validPolylines.length === 0) {
+    return { ...emptyResult, inputDiagnostics };
+  }
+
+  // Decode ALL valid polyline strings and concatenate points
+  const allPoints: Array<{ lat: number; lng: number }> = [];
+  let longestIdx = 0;
+  let longestLength = 0;
+
+  for (const { idx, polyline } of validPolylines) {
+    try {
+      const points = decodeFlexiblePolyline(polyline);
+      allPoints.push(...points);
+
+      // Track the longest for diagnostics
+      if (polyline.length > longestLength) {
+        longestLength = polyline.length;
+        longestIdx = idx;
+      }
+    } catch {
+      // Ignore polyline decode errors, continue with other sections
+    }
+  }
+
+  // Update diagnostics with chosen info (longest polyline)
+  const longestPolyline = validPolylines.find(v => v.idx === longestIdx);
+  if (longestPolyline) {
+    inputDiagnostics.chosenIdx = longestIdx;
+    inputDiagnostics.chosenLength = longestPolyline.polyline.length;
+    inputDiagnostics.chosenPrefix = longestPolyline.polyline.slice(0, 60);
+  }
+
   if (allPoints.length === 0) {
-    return emptyResult;
+    return { ...emptyResult, inputDiagnostics };
+  }
+
+  // Check if lat/lng might be swapped for European routes
+  let swapApplied = false;
+  const firstPoint = allPoints[0];
+
+  if (looksSwappedForEurope(firstPoint)) {
+    // Try swapping all points
+    const swappedPoints = allPoints.map(p => ({ lat: p.lng, lng: p.lat }));
+
+    // Compute bounds of swapped points
+    let minLat = Infinity, maxLat = -Infinity;
+    let minLng = Infinity, maxLng = -Infinity;
+    for (const p of swappedPoints) {
+      if (p.lat < minLat) minLat = p.lat;
+      if (p.lat > maxLat) maxLat = p.lat;
+      if (p.lng < minLng) minLng = p.lng;
+      if (p.lng > maxLng) maxLng = p.lng;
+    }
+
+    // If swapped bounds look plausible for Europe, apply the swap
+    if (boundsPlausibleForEurope({ minLat, maxLat, minLng, maxLng })) {
+      // Apply swap to all points
+      for (let i = 0; i < allPoints.length; i++) {
+        const tmp = allPoints[i].lat;
+        allPoints[i].lat = allPoints[i].lng;
+        allPoints[i].lng = tmp;
+      }
+      swapApplied = true;
+    }
   }
 
   // Compute sanity stats and check bounds plausibility
@@ -362,6 +515,8 @@ function analyzePolylines(response: HereRoutingResponse): PolylineAnalysisResult
     alpsCheck,
     sanityStats,
     boundsPlausible,
+    inputDiagnostics,
+    swapApplied,
   };
 }
 
@@ -628,6 +783,8 @@ export function createTruckRouter(client: HereClient) {
           frejus: frejusMatchReason,
           montBlanc: montBlancMatchReason,
         },
+        polylineInputDiagnostics: polylineAnalysis.inputDiagnostics,
+        polylineSwapApplied: polylineAnalysis.swapApplied,
       },
     };
   }
