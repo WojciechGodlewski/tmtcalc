@@ -172,13 +172,43 @@ describe('encodeFlexiblePolyline and decode round-trip', () => {
 
     expect(decoded.length).toBe(3);
 
-    // After auto-correction, lat should be ~45 (European latitude)
+    // After auto-correction (swap + first point fix), lat should be ~45
     expect(decoded[0].lat).toBeGreaterThan(40);
     expect(decoded[0].lat).toBeLessThan(50);
 
-    // First point lng should NOT be 0 after correction
-    // It should be the original "lat" value which was ~0.000003
-    expect(decoded[0].lng).toBeCloseTo(0.000003, 5);
+    // After swap, first point has lng≈0, which triggers the corrupted first point fix
+    // The fix copies second point's lng (~7.68) to first point
+    expect(decoded[0].lng).toBeGreaterThan(5);
+    expect(decoded[0].lng).toBeLessThan(10);
+  });
+
+  it('fixes corrupted first point with lng=0 when other points are valid', () => {
+    // Simulate the specific corruption pattern observed at runtime:
+    // - First point has valid lat (~45) but corrupted lng (~0)
+    // - Second point has both valid lat (~45) and valid lng (~7.68)
+    // This is different from the swap case - here lat values are correct throughout
+    const corruptedPoints: PolylinePoint[] = [
+      { lat: 45.062355, lng: 0.000003 },  // lat correct, lng corrupted to ~0
+      { lat: 45.06241, lng: 7.679937 },   // both correct
+      { lat: 45.1, lng: 6.7 }             // both correct
+    ];
+
+    const encoded = encodeFlexiblePolyline(corruptedPoints, 5);
+    const decoded = decodeFlexiblePolyline(encoded);
+
+    expect(decoded.length).toBe(3);
+
+    // First point lat should remain correct
+    expect(decoded[0].lat).toBeCloseTo(45.062355, 3);
+
+    // First point lng should be fixed to match second point's lng
+    // (since first point's lng was corrupted to ~0)
+    expect(decoded[0].lng).toBeGreaterThan(5);
+    expect(decoded[0].lng).toBeLessThan(10);
+
+    // Second and third points should be unchanged
+    expect(decoded[1].lat).toBeCloseTo(45.06241, 3);
+    expect(decoded[1].lng).toBeCloseTo(7.679937, 3);
   });
 
   it('computed bounds are within valid Earth coordinate ranges', () => {
