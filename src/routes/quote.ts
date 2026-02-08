@@ -301,8 +301,12 @@ export function createQuoteHandler(hereService: HereService) {
         vehicleProfileId: body.vehicleProfileId,
       });
 
-      // Extract RouteFacts
-      const routeFacts = extractRouteFactsFromHere(routeResult.hereResponse);
+      // Extract RouteFacts, passing the Alps match from route-truck
+      // (includes waypoint proximity detection when polyline decoding fails)
+      const routeFacts = extractRouteFactsFromHere(
+        routeResult.hereResponse,
+        routeResult.debug.alpsMatch
+      );
 
       // Populate geography with country info from resolved points
       // Convert to alpha-2 for consistent format

@@ -527,4 +527,116 @@ describe('POST /api/quote', () => {
       expect(Array.isArray(body.debug.alpsCenterDistances.frejus.fromWaypoints)).toBe(true);
     });
   });
+
+  describe('Waypoint proximity Alps detection', () => {
+    it('applies Alps surcharge when waypoint is within 3km of Frejus', async () => {
+      // Create mock with Frejus waypoint proximity match
+      // Use IT origin because IT->EU model has alpsTunnel surcharge configured
+      // Polyline bounds are implausible, forcing waypoint proximity detection
+      const mockService = createMockHereService({ originCountry: 'IT', destinationCountry: 'FR' });
+      mockService.geocode = vi.fn()
+        .mockResolvedValueOnce({ lat: 45.06235, lng: 7.67993, label: 'Turin, Italy', countryCode: 'IT' })
+        .mockResolvedValueOnce({ lat: 45.56628, lng: 5.91215, label: 'Chambery, France', countryCode: 'FR' });
+      // Override routeTruck to return waypoint proximity match
+      mockService.routeTruck = vi.fn().mockResolvedValue({
+        hereResponse: {
+          routes: [{
+            id: 'mock-route-1',
+            sections: [{
+              id: 'section-1',
+              type: 'vehicle',
+              departure: { time: '2024-01-15T08:00:00+01:00', place: { type: 'place', location: { lat: 45.06235, lng: 7.67993 } } },
+              arrival: { time: '2024-01-15T14:00:00+01:00', place: { type: 'place', location: { lat: 45.56628, lng: 5.91215 } } },
+              summary: { duration: 21600, length: 150000, baseDuration: 18000 },
+              transport: { mode: 'truck' },
+              tolls: [
+                { countryCode: 'ITA', tollSystem: { name: 'Italy Toll' } },
+                { countryCode: 'FRA', tollSystem: { name: 'France Toll' } },
+              ],
+            }],
+          }],
+        },
+        debug: {
+          maskedUrl: 'https://router.hereapi.com/v8/routes',
+          via: [],
+          viaCount: 0,
+          sectionsCount: 1,
+          actionsCountTotal: 0,
+          polylinePointsChecked: 100,
+          // This is the key: alpsMatch.frejus = true from waypoint proximity
+          alpsMatch: { frejus: true, montBlanc: false },
+          alpsMatchDetails: {
+            frejus: { matched: true, pointsInside: 0, matchReason: 'waypointProximity' },
+            montBlanc: { matched: false, pointsInside: 0, matchReason: 'none' },
+          },
+          alpsConfig: {
+            centers: {
+              frejus: { lat: 45.086, lng: 6.706 },
+              montBlanc: { lat: 45.924, lng: 6.968 },
+            },
+            bboxes: {
+              frejus: { minLat: 45.03, maxLat: 45.17, minLng: 6.60, maxLng: 6.78 },
+              montBlanc: { minLat: 45.82, maxLat: 45.96, minLng: 6.92, maxLng: 7.03 },
+            },
+          },
+          alpsCenterDistances: {
+            // Origin (Turin) ~70km from Frejus, simulated waypoint (Bardonecchia) within 3km
+            frejus: { fromOrigin: 70, fromWaypoints: [0.88], fromDestination: 82 },
+            montBlanc: { fromOrigin: 100, fromWaypoints: [95], fromDestination: 50 },
+          },
+          polylineSanity: {
+            // Implausible bounds - polyline decoding failed
+            polylineBounds: { minLat: 767993.7, maxLat: 767994.0, minLng: 1000000, maxLng: 2000000 },
+            polylineFirstPoint: null,
+            polylineLastPoint: null,
+            pointCount: 100,
+          },
+          waypointProximity: {
+            frejus: true,
+            montBlanc: false,
+            reasons: { frejus: 'waypointProximity', montBlanc: 'none' },
+          },
+          polylineBoundsPlausible: false,
+          alpsMatchReason: { frejus: 'waypointProximity', montBlanc: 'none' },
+          samples: [],
+        },
+      });
+
+      const app = buildApp({ hereService: mockService });
+      await app.ready();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/quote',
+        payload: {
+          origin: { address: 'Turin, Italy' },
+          destination: { address: 'Chambery, France' },
+          vehicleProfileId: 'solo_18t_23ep',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+
+      // Verify routeFacts correctly reflects Alps detection
+      expect(body.routeFacts.riskFlags.crossesAlps).toBe(true);
+      expect(body.routeFacts.infrastructure.hasTunnel).toBe(true);
+
+      // Verify Frejus tunnel is in the tunnels list
+      const tunnelNames = body.routeFacts.infrastructure.tunnels.map((t: { name: string }) => t.name);
+      expect(tunnelNames).toContain('Fréjus Tunnel');
+
+      // Verify Alps surcharge is applied
+      const surcharges = body.quote.lineItems.surcharges;
+      const alpsSurcharge = surcharges.find((s: { type: string }) => s.type === 'alpsTunnel');
+      expect(alpsSurcharge).toBeDefined();
+      expect(alpsSurcharge.amount).toBe(200);
+      expect(alpsSurcharge.description).toContain('tunnel');
+
+      // Verify debug shows waypoint proximity as the match reason
+      expect(body.debug.hereResponse.alpsMatchReason.frejus).toBe('waypointProximity');
+      expect(body.debug.hereResponse.alpsMatchDetails.frejus.matched).toBe(true);
+      expect(body.debug.hereResponse.alpsMatchDetails.frejus.matchReason).toBe('waypointProximity');
+    });
+  });
 });

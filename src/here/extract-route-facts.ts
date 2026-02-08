@@ -20,6 +20,7 @@ import {
   decodeFlexiblePolyline,
   checkAlpsTunnels,
   type AlpsTunnelCheckResult,
+  type AlpsMatchReason,
 } from './flexible-polyline.js';
 
 /**
@@ -651,11 +652,24 @@ function extractCountriesFromTolls(sections: HereRouteSection[]): string[] {
 }
 
 /**
+ * Alps match override - allows passing pre-computed Alps detection
+ * (e.g., from waypoint proximity detection when polyline decoding fails)
+ */
+export interface AlpsMatchOverride {
+  frejus: boolean;
+  montBlanc: boolean;
+}
+
+/**
  * Extract canonical RouteFacts from HERE Routing API response
  * @param hereResponse The raw HERE routing response
+ * @param alpsMatchOverride Optional pre-computed Alps match (e.g., from waypoint proximity)
  * @returns Canonical RouteFacts with extracted data
  */
-export function extractRouteFactsFromHere(hereResponse: HereRoutingResponse): RouteFacts {
+export function extractRouteFactsFromHere(
+  hereResponse: HereRoutingResponse,
+  alpsMatchOverride?: AlpsMatchOverride
+): RouteFacts {
   if (!hereResponse.routes || hereResponse.routes.length === 0) {
     return createRouteFacts();
   }
@@ -681,7 +695,30 @@ export function extractRouteFactsFromHere(hereResponse: HereRoutingResponse): Ro
     : null;
 
   // Check polylines for Alps tunnels (primary detection method)
-  const alpsMatch = checkPolylinesForAlpsTunnels(sections);
+  // Use override if provided (e.g., from waypoint proximity detection)
+  let alpsMatch: AlpsTunnelCheckResult;
+  if (alpsMatchOverride) {
+    // Convert override to AlpsTunnelCheckResult format
+    alpsMatch = {
+      frejus: alpsMatchOverride.frejus,
+      montBlanc: alpsMatchOverride.montBlanc,
+      pointsChecked: 0,
+      details: {
+        frejus: {
+          matched: alpsMatchOverride.frejus,
+          pointsInside: 0,
+          matchReason: alpsMatchOverride.frejus ? 'waypointProximity' : 'none',
+        },
+        montBlanc: {
+          matched: alpsMatchOverride.montBlanc,
+          pointsInside: 0,
+          matchReason: alpsMatchOverride.montBlanc ? 'waypointProximity' : 'none',
+        },
+      },
+    };
+  } else {
+    alpsMatch = checkPolylinesForAlpsTunnels(sections);
+  }
 
   // Extract infrastructure info
   const tollInfo = extractTolls(sections);

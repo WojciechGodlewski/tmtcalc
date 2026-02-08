@@ -571,6 +571,10 @@ export function createTruckRouter(client: HereClient) {
     let finalMontBlancMatch: boolean;
     let frejusMatchReason: AlpsMatchReason;
     let montBlancMatchReason: AlpsMatchReason;
+    let finalAlpsMatchDetails: {
+      frejus: TunnelMatchDetails;
+      montBlanc: TunnelMatchDetails;
+    };
 
     if (polylineAnalysis.boundsPlausible) {
       // Polyline bounds are plausible, use polyline-based detection
@@ -578,12 +582,26 @@ export function createTruckRouter(client: HereClient) {
       finalMontBlancMatch = polylineAnalysis.alpsCheck.montBlanc;
       frejusMatchReason = polylineAnalysis.alpsCheck.details.frejus.matchReason || 'none';
       montBlancMatchReason = polylineAnalysis.alpsCheck.details.montBlanc.matchReason || 'none';
+      finalAlpsMatchDetails = polylineAnalysis.alpsCheck.details;
     } else {
       // Polyline bounds are implausible, rely on waypoint proximity
       finalFrejusMatch = waypointProximity.frejus;
       finalMontBlancMatch = waypointProximity.montBlanc;
       frejusMatchReason = waypointProximity.reasons.frejus;
       montBlancMatchReason = waypointProximity.reasons.montBlanc;
+      // Build alpsMatchDetails from waypoint proximity result
+      finalAlpsMatchDetails = {
+        frejus: {
+          matched: waypointProximity.frejus,
+          pointsInside: 0,
+          matchReason: waypointProximity.reasons.frejus,
+        },
+        montBlanc: {
+          matched: waypointProximity.montBlanc,
+          pointsInside: 0,
+          matchReason: waypointProximity.reasons.montBlanc,
+        },
+      };
     }
 
     return {
@@ -599,7 +617,7 @@ export function createTruckRouter(client: HereClient) {
           frejus: finalFrejusMatch,
           montBlanc: finalMontBlancMatch,
         },
-        alpsMatchDetails: polylineAnalysis.alpsCheck.details,
+        alpsMatchDetails: finalAlpsMatchDetails,
         alpsConfig: getAlpsDebugConfig(),
         alpsCenterDistances,
         samples,
