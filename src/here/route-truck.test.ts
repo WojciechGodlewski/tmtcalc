@@ -509,5 +509,105 @@ describe('TruckRouter', () => {
         })
       ).rejects.toThrow(HereApiError);
     });
+
+    it('returns polylineInputDiagnostics with section info', async () => {
+      // Response with 3 sections: one with short polyline, one with longest, one without
+      const responseWithMultipleSections = {
+        routes: [{
+          id: 'route-1',
+          sections: [
+            {
+              id: 'section-1',
+              type: 'vehicle',
+              departure: { time: '2024-01-15T10:00:00+01:00', place: { type: 'place', location: { lat: 45.07, lng: 7.69 } } },
+              arrival: { time: '2024-01-15T11:00:00+01:00', place: { type: 'place', location: { lat: 45.08, lng: 7.00 } } },
+              summary: { duration: 3600, length: 50000, baseDuration: 3600 },
+              transport: { mode: 'truck' },
+              polyline: 'BFoz5xJ', // Short polyline (7 chars)
+              actions: [],
+            },
+            {
+              id: 'section-2',
+              type: 'vehicle',
+              departure: { time: '2024-01-15T11:00:00+01:00', place: { type: 'place', location: { lat: 45.08, lng: 7.00 } } },
+              arrival: { time: '2024-01-15T14:00:00+01:00', place: { type: 'place', location: { lat: 45.50, lng: 6.00 } } },
+              summary: { duration: 10800, length: 100000, baseDuration: 10800 },
+              transport: { mode: 'truck' },
+              polyline: 'BFoz5xJ67i1B1B7PzIhaxL7Y', // Longest polyline (24 chars)
+              actions: [],
+            },
+            {
+              id: 'section-3',
+              type: 'pedestrian',
+              departure: { time: '2024-01-15T14:00:00+01:00', place: { type: 'place', location: { lat: 45.50, lng: 6.00 } } },
+              arrival: { time: '2024-01-15T14:05:00+01:00', place: { type: 'place', location: { lat: 45.51, lng: 5.99 } } },
+              summary: { duration: 300, length: 500, baseDuration: 300 },
+              transport: { mode: 'pedestrian' },
+              // No polyline in this section
+              actions: [],
+            },
+          ],
+        }],
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => responseWithMultipleSections,
+      });
+
+      const result = await router.routeTruck({
+        origin: { lat: 45.07, lng: 7.69 },
+        destination: { lat: 45.51, lng: 5.99 },
+        vehicleProfileId: 'solo_18t_23ep',
+      });
+
+      // polylineInputDiagnostics should be present
+      expect(result.debug.polylineInputDiagnostics).toBeDefined();
+      const diag = result.debug.polylineInputDiagnostics;
+
+      // Should have 3 sections analyzed
+      expect(diag.sections).toHaveLength(3);
+
+      // Section 0: short polyline
+      expect(diag.sections[0].idx).toBe(0);
+      expect(diag.sections[0].type).toBe('string');
+      expect(diag.sections[0].length).toBe(7);
+      expect(diag.sections[0].prefix).toBe('BFoz5xJ');
+
+      // Section 1: longest polyline
+      expect(diag.sections[1].idx).toBe(1);
+      expect(diag.sections[1].type).toBe('string');
+      expect(diag.sections[1].length).toBe(24);
+      expect(diag.sections[1].prefix).toBe('BFoz5xJ67i1B1B7PzIhaxL7Y');
+
+      // Section 2: no polyline
+      expect(diag.sections[2].idx).toBe(2);
+      expect(diag.sections[2].type).toBe('undefined');
+      expect(diag.sections[2].length).toBeNull();
+
+      // Should identify section 1 as chosen (longest)
+      expect(diag.chosenIdx).toBe(1);
+      expect(diag.chosenLength).toBe(24);
+      expect(diag.chosenPrefix).toBe('BFoz5xJ67i1B1B7PzIhaxL7Y');
+
+      // Should have 2 valid polylines
+      expect(diag.validPolylineCount).toBe(2);
+    });
+
+    it('returns polylineSwapApplied flag', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockRoutingResponse,
+      });
+
+      const result = await router.routeTruck({
+        origin: { lat: 52.52, lng: 13.405 },
+        destination: { lat: 52.2297, lng: 21.0122 },
+        vehicleProfileId: 'ftl_13_6_33ep',
+      });
+
+      // polylineSwapApplied should be present
+      expect(typeof result.debug.polylineSwapApplied).toBe('boolean');
+    });
   });
 });
