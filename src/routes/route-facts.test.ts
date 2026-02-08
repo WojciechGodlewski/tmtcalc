@@ -103,6 +103,14 @@ function createMockHereService(): HereService {
         polylineBoundsPlausible: false,
         alpsMatchReason: { frejus: 'none', montBlanc: 'none' },
         samples: ['action:instruction:Head east on A115'],
+        polylineInputDiagnostics: {
+          sections: [],
+          chosenIdx: null,
+          chosenLength: null,
+          chosenPrefix: null,
+          validPolylineCount: 0,
+        },
+        polylineSwapApplied: false,
       },
     }),
     clearGeocodeCache: vi.fn(),
@@ -546,6 +554,14 @@ describe('POST /api/route-facts', () => {
           polylineBoundsPlausible: false,
           alpsMatchReason: { frejus: 'waypointProximity', montBlanc: 'none' },
           samples: ['action:instruction:Head west on A32'],
+          polylineInputDiagnostics: {
+            sections: [],
+            chosenIdx: null,
+            chosenLength: null,
+            chosenPrefix: null,
+            validPolylineCount: 0,
+          },
+          polylineSwapApplied: false,
         },
       });
 
@@ -637,6 +653,14 @@ describe('POST /api/route-facts', () => {
           polylineBoundsPlausible: false,
           alpsMatchReason: { frejus: 'none', montBlanc: 'none' },
           samples: [],
+          polylineInputDiagnostics: {
+            sections: [],
+            chosenIdx: null,
+            chosenLength: null,
+            chosenPrefix: null,
+            validPolylineCount: 0,
+          },
+          polylineSwapApplied: false,
         },
       });
 
@@ -973,6 +997,14 @@ describe('POST /api/route-facts', () => {
           polylineBoundsPlausible: true,
           alpsMatchReason: { frejus: 'waypointProximity', montBlanc: 'none' },
           samples: [],
+          polylineInputDiagnostics: {
+            sections: [],
+            chosenIdx: null,
+            chosenLength: null,
+            chosenPrefix: null,
+            validPolylineCount: 0,
+          },
+          polylineSwapApplied: false,
         },
       });
 
@@ -1060,6 +1092,16 @@ describe('POST /api/route-facts', () => {
           polylineBoundsPlausible: true,
           alpsMatchReason: { frejus: 'none', montBlanc: 'none' },
           samples: [],
+          polylineInputDiagnostics: {
+            sections: [
+              { idx: 0, type: 'string', length: 24, prefix: 'BFoz5xJ67i1B1B7PzIhaxL7Y' },
+            ],
+            chosenIdx: 0,
+            chosenLength: 24,
+            chosenPrefix: 'BFoz5xJ67i1B1B7PzIhaxL7Y',
+            validPolylineCount: 1,
+          },
+          polylineSwapApplied: false,
         },
       });
 
@@ -1089,6 +1131,17 @@ describe('POST /api/route-facts', () => {
       // polylineFirstPoint and polylineLastPoint should also be present
       expect(body.debug.hereResponse.polylineFirstPoint).toBeDefined();
       expect(body.debug.hereResponse.polylineLastPoint).toBeDefined();
+
+      // polylineInputDiagnostics should be present with section info
+      expect(body.debug.hereResponse.polylineInputDiagnostics).toBeDefined();
+      expect(body.debug.hereResponse.polylineInputDiagnostics.sections).toBeDefined();
+      expect(body.debug.hereResponse.polylineInputDiagnostics.sections.length).toBeGreaterThan(0);
+      expect(body.debug.hereResponse.polylineInputDiagnostics.sections[0].type).toBe('string');
+      expect(body.debug.hereResponse.polylineInputDiagnostics.chosenPrefix).toBeDefined();
+      expect(body.debug.hereResponse.polylineInputDiagnostics.chosenLength).toBeGreaterThan(0);
+
+      // polylineSwapApplied should be a boolean
+      expect(typeof body.debug.hereResponse.polylineSwapApplied).toBe('boolean');
     });
   });
 });

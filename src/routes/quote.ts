@@ -170,6 +170,19 @@ interface WaypointProximityResult {
   };
 }
 
+interface PolylineInputDiagnostics {
+  sections: Array<{
+    idx: number;
+    type: string;
+    length: number | null;
+    prefix: string | null;
+  }>;
+  chosenIdx: number | null;
+  chosenLength: number | null;
+  chosenPrefix: string | null;
+  validPolylineCount: number;
+}
+
 interface HereResponseDebug {
   sectionsCount: number;
   actionsCountTotal: number;
@@ -196,6 +209,10 @@ interface HereResponseDebug {
     montBlanc: AlpsMatchReason;
   };
   samples: string[];
+  /** Diagnostics for polyline input extraction from HERE response */
+  polylineInputDiagnostics: PolylineInputDiagnostics;
+  /** Whether lat/lng swap was applied to fix European routes */
+  polylineSwapApplied: boolean;
 }
 
 interface AlpsConfig {
@@ -392,6 +409,8 @@ export function createQuoteHandler(hereService: HereService) {
             waypointProximity: routeResult.debug.waypointProximity,
             alpsMatchReason: routeResult.debug.alpsMatchReason,
             samples: routeResult.debug.samples,
+            polylineInputDiagnostics: routeResult.debug.polylineInputDiagnostics,
+            polylineSwapApplied: routeResult.debug.polylineSwapApplied,
           },
           alpsConfig: routeResult.debug.alpsConfig,
           alpsCenterDistances: routeResult.debug.alpsCenterDistances,
