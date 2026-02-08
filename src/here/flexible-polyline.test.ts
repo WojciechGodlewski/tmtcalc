@@ -100,6 +100,32 @@ describe('encodeFlexiblePolyline and decode round-trip', () => {
     }
   });
 
+  it('decoded lat/lng are not swapped for European Alps route', () => {
+    // Turin (45.06235, 7.67993) is in Italy:
+    //  - latitude ~45 (Northern Italy, around Alps)
+    //  - longitude ~7.68 (between 5 and 10 for Western Europe)
+    const turinPoint: PolylinePoint[] = [
+      { lat: 45.06235, lng: 7.67993 },
+    ];
+
+    const encoded = encodeFlexiblePolyline(turinPoint, 5);
+    const decoded = decodeFlexiblePolyline(encoded);
+
+    expect(decoded.length).toBe(1);
+
+    // lat should be around 45 (not 7), proving lat/lng are not swapped
+    expect(decoded[0].lat).toBeGreaterThan(40);
+    expect(decoded[0].lat).toBeLessThan(50);
+
+    // lng should be between 5 and 10 for Alps/Italy region
+    expect(decoded[0].lng).toBeGreaterThan(5);
+    expect(decoded[0].lng).toBeLessThan(10);
+
+    // Ensure values are within valid Earth coordinate ranges
+    expect(Math.abs(decoded[0].lat)).toBeLessThanOrEqual(90);
+    expect(Math.abs(decoded[0].lng)).toBeLessThanOrEqual(180);
+  });
+
   it('computed bounds are within valid Earth coordinate ranges', () => {
     const originalPoints: PolylinePoint[] = [
       { lat: 45.06235, lng: 7.67993 },  // Turin

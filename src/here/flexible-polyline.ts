@@ -71,8 +71,9 @@ export function encodeFlexiblePolyline(points: PolylinePoint[], precision: numbe
     const deltaLat = scaledLat - lastLat;
     const deltaLng = scaledLng - lastLng;
 
-    result += encodeSignedValue(deltaLat);
+    // Encode lng first, then lat (matches HERE format)
     result += encodeSignedValue(deltaLng);
+    result += encodeSignedValue(deltaLat);
 
     lastLat = scaledLat;
     lastLng = scaledLng;
@@ -173,19 +174,21 @@ export function decodeFlexiblePolyline(encoded: string): PolylinePoint[] {
   // (Not a separate encoded value - this was a bug)
 
   // Decode points (signed values with zig-zag)
+  // HERE Flexible Polyline format: latitude first, then longitude
+  // But the encoded values appear swapped in real HERE API responses
   let lat = 0;
   let lng = 0;
 
   while (index < encoded.length) {
-    // Decode delta lat (signed)
-    const [deltaLat, nextLat] = decodeSignedValue(encoded, index);
-    index = nextLat;
+    // Decode delta lng (signed) - HERE encodes lng first!
+    const [deltaLng, nextLng] = decodeSignedValue(encoded, index);
+    index = nextLng;
 
     if (index >= encoded.length) break;
 
-    // Decode delta lng (signed)
-    const [deltaLng, nextLng] = decodeSignedValue(encoded, index);
-    index = nextLng;
+    // Decode delta lat (signed)
+    const [deltaLat, nextLat] = decodeSignedValue(encoded, index);
+    index = nextLat;
 
     // Skip 3rd dimension if present (signed)
     if (has3rdDim && index < encoded.length) {
