@@ -151,6 +151,14 @@ describe('encodeFlexiblePolyline and decode round-trip', () => {
     expect(bounds.maxLat).toBeGreaterThanOrEqual(45.56);
     expect(bounds.minLng).toBeLessThanOrEqual(5.93);
     expect(bounds.maxLng).toBeGreaterThanOrEqual(7.67);
+
+    // Specifically verify lng is not 0 (regression test)
+    expect(bounds.minLng).toBeGreaterThan(4);
+    expect(bounds.maxLng).toBeLessThan(10);
+
+    // Verify first point has correct lng (not 0)
+    expect(stats.polylineFirstPoint?.lng).toBeGreaterThan(5);
+    expect(stats.polylineFirstPoint?.lng).toBeLessThan(10);
   });
 
   it('handles single point', () => {
