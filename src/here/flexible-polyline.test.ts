@@ -126,6 +126,61 @@ describe('encodeFlexiblePolyline and decode round-trip', () => {
     expect(Math.abs(decoded[0].lng)).toBeLessThanOrEqual(180);
   });
 
+  it('auto-corrects swapped lat/lng for European routes', () => {
+    // Simulate a scenario where lat and lng values are swapped:
+    // - "lat" values are small (5-8, which are actually lng for Europe)
+    // - "lng" values are ~45 (which are actually lat for Europe)
+    const swappedPoints: PolylinePoint[] = [
+      { lat: 7.6869, lng: 45.0703 },  // lat and lng are swapped
+      { lat: 6.7, lng: 45.1 },
+      { lat: 5.9178, lng: 45.5646 }
+    ];
+
+    // Encode these "wrong" values
+    const encoded = encodeFlexiblePolyline(swappedPoints, 5);
+
+    // Decode - the auto-correction should detect and fix the swap
+    const decoded = decodeFlexiblePolyline(encoded);
+
+    expect(decoded.length).toBe(3);
+
+    // After auto-correction, lat should be ~45 (European latitude)
+    expect(decoded[0].lat).toBeGreaterThan(40);
+    expect(decoded[0].lat).toBeLessThan(50);
+
+    // After auto-correction, lng should be 5-10 (Western European longitude)
+    expect(decoded[0].lng).toBeGreaterThan(4);
+    expect(decoded[0].lng).toBeLessThan(10);
+
+    // Verify the specific corrected values
+    expect(decoded[0].lat).toBeCloseTo(45.0703, 3);
+    expect(decoded[0].lng).toBeCloseTo(7.6869, 3);
+  });
+
+  it('auto-corrects when first point has lng=0 but others look European', () => {
+    // Simulate the "lng=0 at origin" case where the first point has
+    // an abnormal lng=0 but subsequent points have lat values in ~45 range
+    // which indicates the values are swapped
+    const pointsWithZeroLng: PolylinePoint[] = [
+      { lat: 0.000003, lng: 45.062355 },  // lat~0, lng~45 (swapped)
+      { lat: 7.679937, lng: 45.06241 },
+      { lat: 6.7, lng: 45.1 }
+    ];
+
+    const encoded = encodeFlexiblePolyline(pointsWithZeroLng, 5);
+    const decoded = decodeFlexiblePolyline(encoded);
+
+    expect(decoded.length).toBe(3);
+
+    // After auto-correction, lat should be ~45 (European latitude)
+    expect(decoded[0].lat).toBeGreaterThan(40);
+    expect(decoded[0].lat).toBeLessThan(50);
+
+    // First point lng should NOT be 0 after correction
+    // It should be the original "lat" value which was ~0.000003
+    expect(decoded[0].lng).toBeCloseTo(0.000003, 5);
+  });
+
   it('computed bounds are within valid Earth coordinate ranges', () => {
     const originalPoints: PolylinePoint[] = [
       { lat: 45.06235, lng: 7.67993 },  // Turin
