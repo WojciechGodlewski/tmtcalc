@@ -71,9 +71,9 @@ export function encodeFlexiblePolyline(points: PolylinePoint[], precision: numbe
     const deltaLat = scaledLat - lastLat;
     const deltaLng = scaledLng - lastLng;
 
-    // Encode lng first, then lat (matches HERE format)
-    result += encodeSignedValue(deltaLng);
+    // Encode lat first, then lng (matches HERE spec)
     result += encodeSignedValue(deltaLat);
+    result += encodeSignedValue(deltaLng);
 
     lastLat = scaledLat;
     lastLng = scaledLng;
@@ -175,20 +175,19 @@ export function decodeFlexiblePolyline(encoded: string): PolylinePoint[] {
 
   // Decode points (signed values with zig-zag)
   // HERE Flexible Polyline format: latitude first, then longitude
-  // But the encoded values appear swapped in real HERE API responses
   let lat = 0;
   let lng = 0;
 
   while (index < encoded.length) {
-    // Decode delta lng (signed) - HERE encodes lng first!
-    const [deltaLng, nextLng] = decodeSignedValue(encoded, index);
-    index = nextLng;
+    // Decode delta lat (signed) - lat comes first per HERE spec
+    const [deltaLat, nextLat] = decodeSignedValue(encoded, index);
+    index = nextLat;
 
     if (index >= encoded.length) break;
 
-    // Decode delta lat (signed)
-    const [deltaLat, nextLat] = decodeSignedValue(encoded, index);
-    index = nextLat;
+    // Decode delta lng (signed)
+    const [deltaLng, nextLng] = decodeSignedValue(encoded, index);
+    index = nextLng;
 
     // Skip 3rd dimension if present (signed)
     if (has3rdDim && index < encoded.length) {
@@ -274,6 +273,12 @@ export interface PolylineSanityStats {
   polylineFirstPoint: PolylinePoint | null;
   polylineLastPoint: PolylinePoint | null;
   pointCount: number;
+  /** Debug: shape info for first decoded point */
+  decodedPointShape?: string;
+  /** Debug: raw first point as returned by decoder */
+  decodedPointFirstRaw?: { lat: number; lng: number } | null;
+  /** Debug: raw second point as returned by decoder */
+  decodedPointSecondRaw?: { lat: number; lng: number } | null;
 }
 
 /**
@@ -302,6 +307,11 @@ export function computePolylineSanityStats(points: PolylinePoint[]): PolylineSan
     if (point.lng > maxLng) maxLng = point.lng;
   }
 
+  // Debug: capture raw first and second points
+  const firstPoint = points[0];
+  const secondPoint = points.length > 1 ? points[1] : null;
+  const decodedPointShape = `type=${typeof firstPoint}, keys=${Object.keys(firstPoint).join(',')}, lat_type=${typeof firstPoint.lat}, lng_type=${typeof firstPoint.lng}`;
+
   return {
     polylineBounds: {
       minLat: Math.round(minLat * 100000) / 100000,
@@ -318,6 +328,9 @@ export function computePolylineSanityStats(points: PolylinePoint[]): PolylineSan
       lng: Math.round(points[points.length - 1].lng * 100000) / 100000,
     },
     pointCount: points.length,
+    decodedPointShape,
+    decodedPointFirstRaw: { lat: firstPoint.lat, lng: firstPoint.lng },
+    decodedPointSecondRaw: secondPoint ? { lat: secondPoint.lat, lng: secondPoint.lng } : null,
   };
 }
 
