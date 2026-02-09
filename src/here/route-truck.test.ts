@@ -692,5 +692,67 @@ describe('TruckRouter', () => {
       // When no polyline in response, should be null
       expect(result.debug.decodedFirstTwoPoints).toBeNull();
     });
+
+    it('patches first point lng using origin distance validation', async () => {
+      // Test the hardened lng patch that uses origin distance criteria:
+      // - Apply patch only if first point is >5km from origin AND second point is <2km from origin
+      // We create a polyline where first point has lng≈0 (corrupted) and second has valid lng
+      // Origin is near the expected first point location (Turin: 45.07, 7.68)
+
+      // Create a mock polyline that when decoded produces:
+      // Point 1: lat=45.062355, lng=0.000003 (corrupted - far from origin)
+      // Point 2: lat=45.06241, lng=7.679937 (valid - close to origin)
+      // We need to encode these points to get a test polyline
+      // Using the encoder: encodeFlexiblePolyline([{lat:45.062355,lng:0.000003},{lat:45.06241,lng:7.679937}])
+      const responseWithCorruptedFirstPoint = {
+        routes: [{
+          id: 'route-1',
+          sections: [{
+            id: 'section-1',
+            type: 'vehicle',
+            departure: { time: '2024-01-15T10:00:00+01:00', place: { type: 'place', location: { lat: 45.0703, lng: 7.6869 } } },
+            arrival: { time: '2024-01-15T14:00:00+01:00', place: { type: 'place', location: { lat: 45.5646, lng: 5.9178 } } },
+            summary: { duration: 14400, length: 150000, baseDuration: 14400 },
+            transport: { mode: 'truck' },
+            // Encoded polyline for [{lat:45.062355,lng:0.000003},{lat:45.06241,lng:7.679937},{lat:45.1,lng:6.7}]
+            // First point has corrupted lng≈0
+            polyline: 'F4nhzIAK0_7uB-qHzs_F',
+            actions: [
+              { action: 'depart', duration: 0, length: 0, instruction: 'Head west', offset: 0 },
+            ],
+          }],
+        }],
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => responseWithCorruptedFirstPoint,
+      });
+
+      const result = await router.routeTruck({
+        // Origin is at Turin - close to what second point should be (7.68 lng)
+        origin: { lat: 45.0703, lng: 7.6869 },
+        destination: { lat: 45.5646, lng: 5.9178 },
+        vehicleProfileId: 'solo_18t_23ep',
+      });
+
+      // Verify patch debug fields are present
+      expect('firstPointLngPatched' in result.debug).toBe(true);
+      expect('firstPointOriginDistanceKmBefore' in result.debug).toBe(true);
+      expect('firstPointOriginDistanceKmAfter' in result.debug).toBe(true);
+
+      // The patch should be applied because:
+      // - First point (lat=45.06, lng≈0) is far from origin (lat=45.07, lng=7.68) - >5km
+      // - Second point (lat=45.06, lng=7.68) is close to origin - <2km
+      expect(result.debug.firstPointLngPatched).toBe(true);
+      expect(result.debug.firstPointOriginDistanceKmBefore).not.toBeNull();
+      expect(result.debug.firstPointOriginDistanceKmBefore!).toBeGreaterThan(5);
+      expect(result.debug.firstPointOriginDistanceKmAfter).not.toBeNull();
+      expect(result.debug.firstPointOriginDistanceKmAfter!).toBeLessThan(2);
+
+      // After patch, polylineFirstPoint should have valid lng
+      expect(result.debug.polylineSanity.polylineFirstPoint).not.toBeNull();
+      expect(result.debug.polylineSanity.polylineFirstPoint!.lng).toBeGreaterThan(5);
+    });
   });
 });

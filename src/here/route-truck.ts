@@ -13,6 +13,7 @@ import {
   computeAlpsCenterDistances,
   checkWaypointProximity,
   arePolylineBoundsPlausible,
+  haversineDistanceKm,
   type AlpsTunnelCheckResult,
   type TunnelMatchDetails,
   type PolylineSanityStats,
@@ -77,6 +78,12 @@ export interface RouteDebugInfo {
   polylineSwapApplied: boolean;
   /** First two points as decoded (before any swap), for runtime debugging */
   decodedFirstTwoPoints: Array<{ lat: number; lng: number }> | null;
+  /** Whether first point lng was patched due to corruption */
+  firstPointLngPatched: boolean;
+  /** Distance from origin to first decoded point before lng patch (km) */
+  firstPointOriginDistanceKmBefore: number | null;
+  /** Distance from origin to first decoded point after lng patch (km) */
+  firstPointOriginDistanceKmAfter: number | null;
 }
 
 /**
@@ -314,6 +321,12 @@ interface PolylineAnalysisResult {
   swapApplied: boolean;
   /** First two points as decoded (before any swap), for runtime debugging */
   decodedFirstTwoPoints: Array<{ lat: number; lng: number }> | null;
+  /** Whether first point lng was patched due to corruption */
+  firstPointLngPatched: boolean;
+  /** Distance from origin to first decoded point before lng patch (km) */
+  firstPointOriginDistanceKmBefore: number | null;
+  /** Distance from origin to first decoded point after lng patch (km) */
+  firstPointOriginDistanceKmAfter: number | null;
 }
 
 /**
@@ -356,7 +369,7 @@ function boundsPlausibleForEurope(bounds: { minLat: number; maxLat: number; minL
  * Aggregates all polyline points and checks them together for accurate details
  * Also computes sanity stats for debugging
  */
-function analyzePolylines(response: HereRoutingResponse): PolylineAnalysisResult {
+function analyzePolylines(response: HereRoutingResponse, origin: Coordinates): PolylineAnalysisResult {
   const emptyResult: PolylineAnalysisResult = {
     alpsCheck: {
       frejus: false,
@@ -377,6 +390,9 @@ function analyzePolylines(response: HereRoutingResponse): PolylineAnalysisResult
     inputDiagnostics: EMPTY_DIAGNOSTICS,
     swapApplied: false,
     decodedFirstTwoPoints: null,
+    firstPointLngPatched: false,
+    firstPointOriginDistanceKmBefore: null,
+    firstPointOriginDistanceKmAfter: null,
   };
 
   if (!response.routes || response.routes.length === 0) {
@@ -495,6 +511,43 @@ function analyzePolylines(response: HereRoutingResponse): PolylineAnalysisResult
     }
   }
 
+  // Fix corrupted first point lng≈0 using origin distance validation
+  // Apply patch only if first point is >5km from origin AND second point is <2km from origin
+  let firstPointLngPatched = false;
+  let firstPointOriginDistanceKmBefore: number | null = null;
+  let firstPointOriginDistanceKmAfter: number | null = null;
+
+  if (allPoints.length >= 2) {
+    const first = allPoints[0];
+    const second = allPoints[1];
+
+    // Check if first point has corrupted lng (< 0.5) but valid lat for Europe
+    const firstLngCorrupted = Math.abs(first.lng) < 0.5;
+    const firstLatValid = first.lat >= 35 && first.lat <= 55;
+
+    // Check if second point has valid European coordinates
+    const secondLatValid = second.lat >= 35 && second.lat <= 55;
+    const secondLngValid = second.lng >= 2 && second.lng <= 20;
+
+    if (firstLngCorrupted && firstLatValid && secondLatValid && secondLngValid) {
+      // Compute distances from origin
+      const distFirstBefore = haversineDistanceKm(origin, first);
+      const distSecond = haversineDistanceKm(origin, second);
+
+      firstPointOriginDistanceKmBefore = Math.round(distFirstBefore * 100) / 100;
+
+      // Apply patch if first point is far from origin (>5km) AND second point is close (<2km)
+      if (distFirstBefore > 5 && distSecond < 2) {
+        // Copy second point's lng to first point
+        first.lng = second.lng;
+        firstPointLngPatched = true;
+
+        const distFirstAfter = haversineDistanceKm(origin, first);
+        firstPointOriginDistanceKmAfter = Math.round(distFirstAfter * 100) / 100;
+      }
+    }
+  }
+
   // Compute sanity stats and check bounds plausibility
   const sanityStats = computePolylineSanityStats(allPoints);
   const boundsPlausible = sanityStats.polylineBounds
@@ -526,6 +579,9 @@ function analyzePolylines(response: HereRoutingResponse): PolylineAnalysisResult
     inputDiagnostics,
     swapApplied,
     decodedFirstTwoPoints,
+    firstPointLngPatched,
+    firstPointOriginDistanceKmBefore,
+    firstPointOriginDistanceKmAfter,
   };
 }
 
@@ -716,7 +772,7 @@ export function createTruckRouter(client: HereClient) {
 
     // Collect telemetry for debug
     const telemetry = collectTelemetryCounts(response);
-    const polylineAnalysis = analyzePolylines(response);
+    const polylineAnalysis = analyzePolylines(response, origin);
     const samples = collectSamples(response);
 
     // Compute distances from origin/waypoints/destination to tunnel centers
@@ -795,6 +851,9 @@ export function createTruckRouter(client: HereClient) {
         polylineInputDiagnostics: polylineAnalysis.inputDiagnostics,
         polylineSwapApplied: polylineAnalysis.swapApplied,
         decodedFirstTwoPoints: polylineAnalysis.decodedFirstTwoPoints,
+        firstPointLngPatched: polylineAnalysis.firstPointLngPatched,
+        firstPointOriginDistanceKmBefore: polylineAnalysis.firstPointOriginDistanceKmBefore,
+        firstPointOriginDistanceKmAfter: polylineAnalysis.firstPointOriginDistanceKmAfter,
       },
     };
   }
