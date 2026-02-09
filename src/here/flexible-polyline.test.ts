@@ -157,7 +157,7 @@ describe('encodeFlexiblePolyline and decode round-trip', () => {
     expect(decoded[0].lng).toBeCloseTo(7.6869, 3);
   });
 
-  it('auto-corrects when first point has lng=0 but others look European', () => {
+  it('applies swap when first point has lng=0 but others look European (swap case)', () => {
     // Simulate the "lng=0 at origin" case where the first point has
     // an abnormal lng=0 but subsequent points have lat values in ~45 range
     // which indicates the values are swapped
@@ -172,21 +172,20 @@ describe('encodeFlexiblePolyline and decode round-trip', () => {
 
     expect(decoded.length).toBe(3);
 
-    // After auto-correction (swap + first point fix), lat should be ~45
+    // After swap, lat should be ~45 (European latitude)
     expect(decoded[0].lat).toBeGreaterThan(40);
     expect(decoded[0].lat).toBeLessThan(50);
 
-    // After swap, first point has lng≈0, which triggers the corrupted first point fix
-    // The fix copies second point's lng (~7.68) to first point
-    expect(decoded[0].lng).toBeGreaterThan(5);
-    expect(decoded[0].lng).toBeLessThan(10);
+    // After swap, first point has lng≈0 - the lng=0 fix is now in route-truck.ts
+    // where it can use origin distance validation
+    // Decoder only applies the swap, not the lng fix
+    expect(decoded[0].lng).toBeCloseTo(0.000003, 5);
   });
 
-  it('fixes corrupted first point with lng=0 when other points are valid', () => {
-    // Simulate the specific corruption pattern observed at runtime:
-    // - First point has valid lat (~45) but corrupted lng (~0)
-    // - Second point has both valid lat (~45) and valid lng (~7.68)
-    // This is different from the swap case - here lat values are correct throughout
+  it('preserves corrupted first point lng (fix is in route-truck with origin validation)', () => {
+    // The corrupted first point fix is now in route-truck.ts, not the decoder
+    // This test verifies the decoder preserves the values as-is
+    // Route-truck applies the fix using origin distance validation
     const corruptedPoints: PolylinePoint[] = [
       { lat: 45.062355, lng: 0.000003 },  // lat correct, lng corrupted to ~0
       { lat: 45.06241, lng: 7.679937 },   // both correct
@@ -198,13 +197,10 @@ describe('encodeFlexiblePolyline and decode round-trip', () => {
 
     expect(decoded.length).toBe(3);
 
-    // First point lat should remain correct
+    // First point should be preserved as-is by decoder
+    // (route-truck.ts applies fix with origin distance validation)
     expect(decoded[0].lat).toBeCloseTo(45.062355, 3);
-
-    // First point lng should be fixed to match second point's lng
-    // (since first point's lng was corrupted to ~0)
-    expect(decoded[0].lng).toBeGreaterThan(5);
-    expect(decoded[0].lng).toBeLessThan(10);
+    expect(decoded[0].lng).toBeCloseTo(0.000003, 3);
 
     // Second and third points should be unchanged
     expect(decoded[1].lat).toBeCloseTo(45.06241, 3);

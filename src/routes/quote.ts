@@ -215,6 +215,12 @@ interface HereResponseDebug {
   polylineSwapApplied: boolean;
   /** First two points as decoded (before any swap), for runtime debugging */
   decodedFirstTwoPoints: Array<{ lat: number; lng: number }> | null;
+  /** Whether first point lng was patched due to corruption */
+  firstPointLngPatched: boolean;
+  /** Distance from origin to first decoded point before lng patch (km) */
+  firstPointOriginDistanceKmBefore: number | null;
+  /** Distance from origin to first decoded point after lng patch (km) */
+  firstPointOriginDistanceKmAfter: number | null;
 }
 
 interface AlpsConfig {
@@ -414,6 +420,9 @@ export function createQuoteHandler(hereService: HereService) {
             polylineInputDiagnostics: routeResult.debug.polylineInputDiagnostics,
             polylineSwapApplied: routeResult.debug.polylineSwapApplied,
             decodedFirstTwoPoints: routeResult.debug.decodedFirstTwoPoints,
+            firstPointLngPatched: routeResult.debug.firstPointLngPatched,
+            firstPointOriginDistanceKmBefore: routeResult.debug.firstPointOriginDistanceKmBefore,
+            firstPointOriginDistanceKmAfter: routeResult.debug.firstPointOriginDistanceKmAfter,
           },
           alpsConfig: routeResult.debug.alpsConfig,
           alpsCenterDistances: routeResult.debug.alpsCenterDistances,

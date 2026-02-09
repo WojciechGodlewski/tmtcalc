@@ -292,32 +292,6 @@ export function decodeFlexiblePolyline(encoded: string): PolylinePoint[] {
     }
   }
 
-  // Fix corrupted first point lng=0 for European routes
-  // This handles cases where only the first point has lng≈0 while all other points are correct
-  // Pattern: first point has valid lat (~45) but lng≈0, second point has valid lat and lng
-  if (points.length >= 2) {
-    const first = points[0];
-    const second = points[1];
-
-    // Check if first point looks corrupted:
-    // - lat is valid for Europe (35-55)
-    // - lng is near 0 (< 0.5)
-    const firstLatValid = first.lat >= 35 && first.lat <= 55;
-    const firstLngCorrupted = Math.abs(first.lng) < 0.5;
-
-    // Check if second point looks valid for Europe:
-    // - lat is valid (35-55)
-    // - lng is valid Western European range (2-20)
-    const secondLatValid = second.lat >= 35 && second.lat <= 55;
-    const secondLngValid = second.lng >= 2 && second.lng <= 20;
-
-    if (firstLatValid && firstLngCorrupted && secondLatValid && secondLngValid) {
-      // Copy second point's lng to first point
-      // This fixes the corrupted first point while preserving the correct lat
-      first.lng = second.lng;
-    }
-  }
-
   return points;
 }
 
