@@ -76,10 +76,14 @@ export interface RouteDebugInfo {
   polylineInputDiagnostics: PolylineInputDiagnostics;
   /** Whether lat/lng swap was applied to fix European routes */
   polylineSwapApplied: boolean;
-  /** First two points as decoded (before any swap), for runtime debugging */
-  decodedFirstTwoPoints: Array<{ lat: number; lng: number }> | null;
+  /** First two points as decoded (before any fixes), for runtime debugging */
+  decodedFirstTwoPointsBeforeFix: Array<{ lat: number; lng: number }> | null;
+  /** First two points after all fixes (swap + lng patch), for runtime debugging */
+  decodedFirstTwoPointsAfterFix: Array<{ lat: number; lng: number }> | null;
   /** Whether first point lng was patched due to corruption */
   firstPointLngPatched: boolean;
+  /** Reason for first point lng patch: 'none' | 'patternMatch' | 'originDistanceGate' */
+  firstPointLngPatchReason: 'none' | 'patternMatch' | 'originDistanceGate';
   /** Distance from origin to first decoded point before lng patch (km) */
   firstPointOriginDistanceKmBefore: number | null;
   /** Distance from origin to first decoded point after lng patch (km) */
@@ -319,10 +323,14 @@ interface PolylineAnalysisResult {
   inputDiagnostics: PolylineInputDiagnostics;
   /** Whether lat/lng swap was applied */
   swapApplied: boolean;
-  /** First two points as decoded (before any swap), for runtime debugging */
-  decodedFirstTwoPoints: Array<{ lat: number; lng: number }> | null;
+  /** First two points as decoded (before any fixes), for runtime debugging */
+  decodedFirstTwoPointsBeforeFix: Array<{ lat: number; lng: number }> | null;
+  /** First two points after all fixes (swap + lng patch), for runtime debugging */
+  decodedFirstTwoPointsAfterFix: Array<{ lat: number; lng: number }> | null;
   /** Whether first point lng was patched due to corruption */
   firstPointLngPatched: boolean;
+  /** Reason for first point lng patch: 'none' | 'patternMatch' | 'originDistanceGate' */
+  firstPointLngPatchReason: 'none' | 'patternMatch' | 'originDistanceGate';
   /** Distance from origin to first decoded point before lng patch (km) */
   firstPointOriginDistanceKmBefore: number | null;
   /** Distance from origin to first decoded point after lng patch (km) */
@@ -389,8 +397,10 @@ function analyzePolylines(response: HereRoutingResponse, origin: Coordinates): P
     boundsPlausible: false,
     inputDiagnostics: EMPTY_DIAGNOSTICS,
     swapApplied: false,
-    decodedFirstTwoPoints: null,
+    decodedFirstTwoPointsBeforeFix: null,
+    decodedFirstTwoPointsAfterFix: null,
     firstPointLngPatched: false,
+    firstPointLngPatchReason: 'none',
     firstPointOriginDistanceKmBefore: null,
     firstPointOriginDistanceKmAfter: null,
   };
@@ -478,8 +488,8 @@ function analyzePolylines(response: HereRoutingResponse, origin: Coordinates): P
     return { ...emptyResult, inputDiagnostics };
   }
 
-  // Capture first two points as decoded (before any swap) for runtime debugging
-  const decodedFirstTwoPoints = allPoints.slice(0, 2).map(p => ({ lat: p.lat, lng: p.lng }));
+  // Capture first two points as decoded (before any fixes) for runtime debugging
+  const decodedFirstTwoPointsBeforeFix = allPoints.slice(0, 2).map(p => ({ lat: p.lat, lng: p.lng }));
 
   // Check if lat/lng might be swapped for European routes
   let swapApplied = false;
@@ -514,6 +524,7 @@ function analyzePolylines(response: HereRoutingResponse, origin: Coordinates): P
   // Fix corrupted first point lng≈0 using origin distance validation
   // Apply patch only if first point is >5km from origin AND second point is <2km from origin
   let firstPointLngPatched = false;
+  let firstPointLngPatchReason: 'none' | 'patternMatch' | 'originDistanceGate' = 'none';
   let firstPointOriginDistanceKmBefore: number | null = null;
   let firstPointOriginDistanceKmAfter: number | null = null;
 
@@ -530,6 +541,9 @@ function analyzePolylines(response: HereRoutingResponse, origin: Coordinates): P
     const secondLngValid = second.lng >= 2 && second.lng <= 20;
 
     if (firstLngCorrupted && firstLatValid && secondLatValid && secondLngValid) {
+      // Pattern matches - set reason to patternMatch initially
+      firstPointLngPatchReason = 'patternMatch';
+
       // Compute distances from origin
       const distFirstBefore = haversineDistanceKm(origin, first);
       const distSecond = haversineDistanceKm(origin, second);
@@ -541,12 +555,16 @@ function analyzePolylines(response: HereRoutingResponse, origin: Coordinates): P
         // Copy second point's lng to first point
         first.lng = second.lng;
         firstPointLngPatched = true;
+        firstPointLngPatchReason = 'originDistanceGate';
 
         const distFirstAfter = haversineDistanceKm(origin, first);
         firstPointOriginDistanceKmAfter = Math.round(distFirstAfter * 100) / 100;
       }
     }
   }
+
+  // Capture first two points after all fixes (swap + lng patch) for runtime debugging
+  const decodedFirstTwoPointsAfterFix = allPoints.slice(0, 2).map(p => ({ lat: p.lat, lng: p.lng }));
 
   // Compute sanity stats and check bounds plausibility
   const sanityStats = computePolylineSanityStats(allPoints);
@@ -578,8 +596,10 @@ function analyzePolylines(response: HereRoutingResponse, origin: Coordinates): P
     boundsPlausible,
     inputDiagnostics,
     swapApplied,
-    decodedFirstTwoPoints,
+    decodedFirstTwoPointsBeforeFix,
+    decodedFirstTwoPointsAfterFix,
     firstPointLngPatched,
+    firstPointLngPatchReason,
     firstPointOriginDistanceKmBefore,
     firstPointOriginDistanceKmAfter,
   };
@@ -850,8 +870,10 @@ export function createTruckRouter(client: HereClient) {
         },
         polylineInputDiagnostics: polylineAnalysis.inputDiagnostics,
         polylineSwapApplied: polylineAnalysis.swapApplied,
-        decodedFirstTwoPoints: polylineAnalysis.decodedFirstTwoPoints,
+        decodedFirstTwoPointsBeforeFix: polylineAnalysis.decodedFirstTwoPointsBeforeFix,
+        decodedFirstTwoPointsAfterFix: polylineAnalysis.decodedFirstTwoPointsAfterFix,
         firstPointLngPatched: polylineAnalysis.firstPointLngPatched,
+        firstPointLngPatchReason: polylineAnalysis.firstPointLngPatchReason,
         firstPointOriginDistanceKmBefore: polylineAnalysis.firstPointOriginDistanceKmBefore,
         firstPointOriginDistanceKmAfter: polylineAnalysis.firstPointOriginDistanceKmAfter,
       },
