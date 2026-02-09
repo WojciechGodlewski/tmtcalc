@@ -111,7 +111,9 @@ function createMockHereService(): HereService {
           validPolylineCount: 0,
         },
         polylineSwapApplied: false,
-        decodedFirstTwoPoints: null,
+        decodedFirstTwoPointsBeforeFix: null,
+        decodedFirstTwoPointsAfterFix: null,
+        firstPointLngPatchReason: 'none',
       },
     }),
     clearGeocodeCache: vi.fn(),
@@ -563,7 +565,9 @@ describe('POST /api/route-facts', () => {
             validPolylineCount: 0,
           },
           polylineSwapApplied: false,
-          decodedFirstTwoPoints: null,
+          decodedFirstTwoPointsBeforeFix: null,
+          decodedFirstTwoPointsAfterFix: null,
+          firstPointLngPatchReason: 'none',
         },
       });
 
@@ -663,7 +667,9 @@ describe('POST /api/route-facts', () => {
             validPolylineCount: 0,
           },
           polylineSwapApplied: false,
-          decodedFirstTwoPoints: null,
+          decodedFirstTwoPointsBeforeFix: null,
+          decodedFirstTwoPointsAfterFix: null,
+          firstPointLngPatchReason: 'none',
         },
       });
 
@@ -1008,7 +1014,9 @@ describe('POST /api/route-facts', () => {
             validPolylineCount: 0,
           },
           polylineSwapApplied: false,
-          decodedFirstTwoPoints: null,
+          decodedFirstTwoPointsBeforeFix: null,
+          decodedFirstTwoPointsAfterFix: null,
+          firstPointLngPatchReason: 'none',
         },
       });
 
@@ -1106,7 +1114,9 @@ describe('POST /api/route-facts', () => {
             validPolylineCount: 1,
           },
           polylineSwapApplied: false,
-          decodedFirstTwoPoints: null,
+          decodedFirstTwoPointsBeforeFix: null,
+          decodedFirstTwoPointsAfterFix: null,
+          firstPointLngPatchReason: 'none',
         },
       });
 

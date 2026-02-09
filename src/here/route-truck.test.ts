@@ -669,13 +669,16 @@ describe('TruckRouter', () => {
       expect(bounds.minLat).toBeGreaterThan(40);
       expect(bounds.maxLat).toBeLessThan(50);
 
-      // Verify decodedFirstTwoPoints captures raw decoder output
-      expect(result.debug.decodedFirstTwoPoints).not.toBeNull();
-      expect(result.debug.decodedFirstTwoPoints!.length).toBeGreaterThanOrEqual(2);
-      expect(result.debug.decodedFirstTwoPoints![0].lng).toBeGreaterThan(5);
+      // Verify decodedFirstTwoPointsBeforeFix captures raw decoder output
+      expect(result.debug.decodedFirstTwoPointsBeforeFix).not.toBeNull();
+      expect(result.debug.decodedFirstTwoPointsBeforeFix!.length).toBeGreaterThanOrEqual(2);
+      expect(result.debug.decodedFirstTwoPointsBeforeFix![0].lng).toBeGreaterThan(5);
+
+      // Verify decodedFirstTwoPointsAfterFix also present
+      expect(result.debug.decodedFirstTwoPointsAfterFix).not.toBeNull();
     });
 
-    it('returns decodedFirstTwoPoints for runtime debugging', async () => {
+    it('returns decodedFirstTwoPointsBeforeFix/AfterFix for runtime debugging', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => mockRoutingResponse,
@@ -687,10 +690,14 @@ describe('TruckRouter', () => {
         vehicleProfileId: 'ftl_13_6_33ep',
       });
 
-      // decodedFirstTwoPoints should be present (may be null if no polyline)
-      expect('decodedFirstTwoPoints' in result.debug).toBe(true);
+      // decodedFirstTwoPointsBeforeFix should be present (may be null if no polyline)
+      expect('decodedFirstTwoPointsBeforeFix' in result.debug).toBe(true);
+      expect('decodedFirstTwoPointsAfterFix' in result.debug).toBe(true);
+      expect('firstPointLngPatchReason' in result.debug).toBe(true);
       // When no polyline in response, should be null
-      expect(result.debug.decodedFirstTwoPoints).toBeNull();
+      expect(result.debug.decodedFirstTwoPointsBeforeFix).toBeNull();
+      expect(result.debug.decodedFirstTwoPointsAfterFix).toBeNull();
+      expect(result.debug.firstPointLngPatchReason).toBe('none');
     });
 
     it('patches first point lng using origin distance validation', async () => {
@@ -745,10 +752,19 @@ describe('TruckRouter', () => {
       // - First point (lat=45.06, lng≈0) is far from origin (lat=45.07, lng=7.68) - >5km
       // - Second point (lat=45.06, lng=7.68) is close to origin - <2km
       expect(result.debug.firstPointLngPatched).toBe(true);
+      expect(result.debug.firstPointLngPatchReason).toBe('originDistanceGate');
       expect(result.debug.firstPointOriginDistanceKmBefore).not.toBeNull();
       expect(result.debug.firstPointOriginDistanceKmBefore!).toBeGreaterThan(5);
       expect(result.debug.firstPointOriginDistanceKmAfter).not.toBeNull();
       expect(result.debug.firstPointOriginDistanceKmAfter!).toBeLessThan(2);
+
+      // Before fix should show corrupted first point with lng≈0
+      expect(result.debug.decodedFirstTwoPointsBeforeFix).not.toBeNull();
+      expect(result.debug.decodedFirstTwoPointsBeforeFix![0].lng).toBeLessThan(0.5);
+
+      // After fix should show corrected first point with valid lng
+      expect(result.debug.decodedFirstTwoPointsAfterFix).not.toBeNull();
+      expect(result.debug.decodedFirstTwoPointsAfterFix![0].lng).toBeGreaterThan(5);
 
       // After patch, polylineFirstPoint should have valid lng
       expect(result.debug.polylineSanity.polylineFirstPoint).not.toBeNull();

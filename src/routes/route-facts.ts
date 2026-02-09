@@ -234,10 +234,14 @@ interface HereResponseDebug {
   polylineInputDiagnostics: PolylineInputDiagnostics;
   /** Whether lat/lng swap was applied to fix European routes */
   polylineSwapApplied: boolean;
-  /** First two points as decoded (before any swap), for runtime debugging */
-  decodedFirstTwoPoints: Array<{ lat: number; lng: number }> | null;
+  /** First two points as decoded (before any fixes), for runtime debugging */
+  decodedFirstTwoPointsBeforeFix: Array<{ lat: number; lng: number }> | null;
+  /** First two points after all fixes (swap + lng patch), for runtime debugging */
+  decodedFirstTwoPointsAfterFix: Array<{ lat: number; lng: number }> | null;
   /** Whether first point lng was patched due to corruption */
   firstPointLngPatched: boolean;
+  /** Reason for first point lng patch: 'none' | 'patternMatch' | 'originDistanceGate' */
+  firstPointLngPatchReason: 'none' | 'patternMatch' | 'originDistanceGate';
   /** Distance from origin to first decoded point before lng patch (km) */
   firstPointOriginDistanceKmBefore: number | null;
   /** Distance from origin to first decoded point after lng patch (km) */
@@ -427,8 +431,10 @@ export function createRouteFactsHandler(hereService: HereService) {
             samples: routeResult.debug.samples,
             polylineInputDiagnostics: routeResult.debug.polylineInputDiagnostics,
             polylineSwapApplied: routeResult.debug.polylineSwapApplied,
-            decodedFirstTwoPoints: routeResult.debug.decodedFirstTwoPoints,
+            decodedFirstTwoPointsBeforeFix: routeResult.debug.decodedFirstTwoPointsBeforeFix,
+            decodedFirstTwoPointsAfterFix: routeResult.debug.decodedFirstTwoPointsAfterFix,
             firstPointLngPatched: routeResult.debug.firstPointLngPatched,
+            firstPointLngPatchReason: routeResult.debug.firstPointLngPatchReason,
             firstPointOriginDistanceKmBefore: routeResult.debug.firstPointOriginDistanceKmBefore,
             firstPointOriginDistanceKmAfter: routeResult.debug.firstPointOriginDistanceKmAfter,
           },
