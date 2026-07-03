@@ -10,6 +10,7 @@ import { calculateQuote, type PricingResult, type QuoteOptions } from '../pricin
 import type { RouteFacts } from '../types/route-facts.js';
 import { ApiError, toApiError, type ApiErrorResponse } from '../errors.js';
 import { applyResolvedGeography } from './geography.js';
+import { buildRouteGeometry, type RouteGeometry } from './route-geometry.js';
 
 /**
  * Location point - either address or coordinates required
@@ -42,6 +43,8 @@ const QuoteRequestSchema = z.object({
   pricingDateTime: z.string().optional(),
   unloadingAfter14: z.boolean().optional(),
   isWeekend: z.boolean().optional(),
+  // When true, include decoded route geometry (for map display) in the response
+  includeGeometry: z.boolean().optional(),
 }).transform((data) => ({
   ...data,
   // Use 'via' if 'waypoints' is not provided, internally use 'waypoints'
@@ -177,6 +180,8 @@ interface AlpsConfig {
 interface QuoteResponse {
   quote: PricingResult;
   routeFacts: RouteFacts;
+  /** Present only when the request sets includeGeometry: true */
+  routeGeometry?: RouteGeometry;
   debug: {
     resolvedPoints: ResolvedPoints;
     hereRequest: HereRequestDebug;
@@ -297,6 +302,13 @@ export function createQuoteHandler(hereService: HereService) {
 
       const quote = calculateQuote(body.vehicleProfileId, routeFacts, quoteOptions);
 
+      // Optional route geometry for map display, from the corrected decoded
+      // polyline. Omitted entirely unless includeGeometry: true is requested.
+      let routeGeometry: RouteGeometry | undefined;
+      if (body.includeGeometry) {
+        routeGeometry = buildRouteGeometry(routeResult.polylinePoints) ?? undefined;
+      }
+
       // Build response
       const resolvedPoints: ResolvedPoints = {
         origin: resolvedOrigin,
@@ -310,6 +322,7 @@ export function createQuoteHandler(hereService: HereService) {
       return {
         quote,
         routeFacts,
+        ...(routeGeometry ? { routeGeometry } : {}),
         debug: {
           resolvedPoints,
           hereRequest: {

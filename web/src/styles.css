@@ -300,6 +300,33 @@ textarea {
   color: var(--muted);
 }
 
+/* --- Route map --- */
+
+.route-map {
+  width: 100%;
+  height: 420px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: #e9edf1;
+}
+
+.map-note {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.map-footnote {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 640px) {
+  .route-map {
+    height: 300px;
+  }
+}
+
 /* --- Debug --- */
 
 .debug-panel summary {

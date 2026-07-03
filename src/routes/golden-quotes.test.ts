@@ -395,6 +395,123 @@ describe('Golden case D: IT -> FR via Fréjus (Turin -> Bardonecchia -> Modane -
   });
 });
 
+describe('Route geometry (includeGeometry flag)', () => {
+  const frejusPayload = {
+    origin: { address: 'Turin, Italy' },
+    via: [{ address: 'Bardonecchia, Italy' }, { address: 'Modane, France' }],
+    destination: { address: 'Chambéry, France' },
+    vehicleProfileId: 'solo_18t_23ep',
+  };
+
+  function frejusRoutingResponse() {
+    return buildRoutingResponse([
+      buildSection({
+        lengthMeters: 180000,
+        durationSeconds: 3 * 3600,
+        tollCountries: ['ITA', 'FRA'],
+        polyline: FREJUS_ROUTE_POLYLINE,
+      }),
+    ]);
+  }
+
+  it('returns corrected routeGeometry for the Fréjus case when includeGeometry is true', async () => {
+    installFetchMock(frejusRoutingResponse());
+    const app = buildTestApp();
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/quote',
+      payload: { ...frejusPayload, includeGeometry: true },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+
+    expect(body.routeGeometry).toBeDefined();
+    const geo = body.routeGeometry;
+
+    // Points exist and match the decoded route (7 fixture points, no cap needed)
+    expect(geo.points.length).toBeGreaterThanOrEqual(2);
+    expect(geo.pointCount).toBe(geo.points.length);
+    expect(geo.simplified).toBe(false);
+
+    // First point is Turin - NO lng~0 corruption after the spec-compliant decoder
+    expect(geo.points[0].lat).toBeCloseTo(45.06236, 4);
+    expect(geo.points[0].lng).toBeCloseTo(7.67994, 4);
+    expect(Math.abs(geo.points[0].lng)).toBeGreaterThan(1);
+
+    // Last point is Chambéry
+    const last = geo.points[geo.points.length - 1];
+    expect(last.lat).toBeCloseTo(45.56628, 4);
+    expect(last.lng).toBeCloseTo(5.92079, 4);
+
+    // Bounds are plausible for the Turin->Chambéry corridor
+    expect(geo.bounds.minLng).toBeGreaterThan(5);
+    expect(geo.bounds.maxLng).toBeLessThan(9);
+    expect(geo.bounds.minLat).toBeGreaterThan(44);
+    expect(geo.bounds.maxLat).toBeLessThan(47);
+  });
+
+  it('does not return routeGeometry when includeGeometry is omitted or false', async () => {
+    installFetchMock(frejusRoutingResponse());
+    const app = buildTestApp();
+    await app.ready();
+
+    const omitted = await app.inject({ method: 'POST', url: '/api/quote', payload: frejusPayload });
+    expect(omitted.statusCode).toBe(200);
+    expect(omitted.json().routeGeometry).toBeUndefined();
+
+    const explicitFalse = await app.inject({
+      method: 'POST',
+      url: '/api/quote',
+      payload: { ...frejusPayload, includeGeometry: false },
+    });
+    expect(explicitFalse.statusCode).toBe(200);
+    expect(explicitFalse.json().routeGeometry).toBeUndefined();
+  });
+
+  it('downsamples long routes to the point cap, preserving first and last points', async () => {
+    // Synthetic 2500-point route along the Turin->Chambéry corridor
+    const manyPoints = Array.from({ length: 2500 }, (_, i) => {
+      const t = i / 2499;
+      return { lat: 45.06236 + t * 0.5, lng: 7.67994 - t * 1.75 };
+    });
+    installFetchMock(buildRoutingResponse([
+      buildSection({
+        lengthMeters: 180000,
+        durationSeconds: 3 * 3600,
+        tollCountries: ['ITA', 'FRA'],
+        polyline: encodeFlexiblePolyline(manyPoints, 5),
+      }),
+    ]));
+    const app = buildTestApp();
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/quote',
+      payload: { ...frejusPayload, includeGeometry: true },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const geo = response.json().routeGeometry;
+    expect(geo).toBeDefined();
+    expect(geo.simplified).toBe(true);
+    expect(geo.points.length).toBeLessThanOrEqual(1000);
+    expect(geo.points.length).toBeGreaterThan(100);
+    // First and last points preserved exactly
+    expect(geo.points[0].lat).toBeCloseTo(manyPoints[0].lat, 4);
+    expect(geo.points[0].lng).toBeCloseTo(manyPoints[0].lng, 4);
+    const last = geo.points[geo.points.length - 1];
+    expect(last.lat).toBeCloseTo(manyPoints[2499].lat, 4);
+    expect(last.lng).toBeCloseTo(manyPoints[2499].lng, 4);
+    // Bounds still cover the full (pre-simplification) route
+    expect(geo.bounds.minLng).toBeCloseTo(7.67994 - 1.75, 3);
+    expect(geo.bounds.maxLng).toBeCloseTo(7.67994, 3);
+  });
+});
+
 describe('Golden case E: robustness', () => {
   it('does not crash when tolls, actions, and polyline are all missing', async () => {
     installFetchMock(buildRoutingResponse([

@@ -69,8 +69,42 @@ export interface RouteFacts {
   };
 }
 
+export interface RouteGeometryPoint {
+  lat: number;
+  lng: number;
+}
+
+export interface RouteGeometryBounds {
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+}
+
+export interface RouteGeometry {
+  points: RouteGeometryPoint[];
+  bounds: RouteGeometryBounds;
+  pointCount: number;
+  simplified: boolean;
+}
+
+/** A geocoded point echoed back in debug.resolvedPoints */
+export interface ResolvedPoint {
+  lat: number;
+  lng: number;
+  label?: string;
+  countryCode?: string | null;
+  source?: string;
+}
+
+export interface ResolvedPoints {
+  origin?: ResolvedPoint;
+  destination?: ResolvedPoint;
+  waypoints?: ResolvedPoint[];
+}
+
 export interface QuoteDebug {
-  resolvedPoints?: unknown;
+  resolvedPoints?: ResolvedPoints;
   hereRequest?: {
     viaCount?: number;
   };
@@ -87,6 +121,8 @@ export interface QuoteDebug {
 export interface QuoteResponse {
   quote: Quote;
   routeFacts: RouteFacts;
+  /** Present only when the request sets includeGeometry: true */
+  routeGeometry?: RouteGeometry;
   debug?: QuoteDebug;
 }
 
@@ -105,4 +141,6 @@ export interface QuoteRequest {
   destination: { address: string };
   via?: Array<{ address: string }>;
   vehicleProfileId: VehicleProfileId;
+  /** Ask the backend for decoded route geometry (map display) */
+  includeGeometry?: boolean;
 }

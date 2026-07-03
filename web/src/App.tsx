@@ -3,6 +3,7 @@ import { requestQuote } from './api';
 import type { QuoteRequest, QuoteResponse } from './types';
 import { QuoteForm, type FormState } from './components/QuoteForm';
 import { QuoteResult } from './components/QuoteResult';
+import { RouteMap } from './components/RouteMap';
 import { RouteFactsPanel } from './components/RouteFactsPanel';
 import { DebugPanel } from './components/DebugPanel';
 import { ErrorMessage } from './components/ErrorMessage';
@@ -18,6 +19,7 @@ export function App() {
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<QuoteResponse | null>(null);
+  const [resultSeq, setResultSeq] = useState(0);
   const [error, setError] = useState<unknown>(null);
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
 
@@ -44,6 +46,7 @@ export function App() {
       destination: { address: destination },
       ...(via.length > 0 ? { via } : {}),
       vehicleProfileId: form.vehicleProfileId,
+      includeGeometry: true,
     };
 
     setLoading(true);
@@ -51,6 +54,7 @@ export function App() {
     try {
       const response = await requestQuote(payload);
       setResult(response);
+      setResultSeq((seq) => seq + 1);
     } catch (err) {
       setResult(null);
       setError(err);
@@ -85,6 +89,13 @@ export function App() {
       {!loading && result && (
         <>
           <QuoteResult result={result} />
+          {/* key remounts the map per result so it initializes exactly once
+              per result/container lifecycle and disposes cleanly */}
+          <RouteMap
+            key={resultSeq}
+            geometry={result.routeGeometry}
+            resolvedPoints={result.debug?.resolvedPoints}
+          />
           <RouteFactsPanel routeFacts={result.routeFacts} />
           <DebugPanel debug={result.debug} />
         </>

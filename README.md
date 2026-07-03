@@ -50,8 +50,66 @@ The quote calculator UI lives in `web/` (Vite + React + TypeScript, plain CSS).
   line items (UK and Alps surcharges highlighted), route facts, and a
   collapsible "Technical debug" section (hidden by default, masked URLs only,
   never any API key).
-- The frontend calls the backend only; no API keys exist in frontend code,
-  env, or build output.
+- The frontend calls the backend only for quotes; the backend HERE_API_KEY
+  never reaches the browser.
+
+### Route map (HERE Maps API for JavaScript)
+
+After a successful quote the UI renders the route on a HERE base map: the
+route polyline (from backend-decoded geometry), origin (A) and destination (B)
+markers, numbered waypoint markers, and the viewport fitted to the route
+bounds.
+
+**Two separate HERE keys are involved — never mix them:**
+
+| Key | Where | Purpose |
+|-----|-------|---------|
+| `HERE_API_KEY` | Backend only (`.env` / server env) | Geocoding, truck routing, tolls. Never sent to the browser. |
+| `VITE_HERE_MAPS_API_KEY` | Frontend build (`web/.env`) | HERE Maps JS rendering only. Ships in the JS bundle, so it is browser-visible **by nature**. |
+
+Setting up the map key:
+
+1. In the [HERE platform](https://platform.here.com) create a **separate**
+   API key for the Maps API for JavaScript (do **not** reuse the backend
+   routing key), and restrict it (allowed domains, JS Maps API only).
+2. `cp web/.env.example web/.env` and set `VITE_HERE_MAPS_API_KEY=<that key>`.
+3. Never commit `web/.env` (it is gitignored, like all `.env` files).
+
+Without the key the app still works fully — the map area just shows
+"HERE map key is not configured. Quote calculation still works."
+
+Map tiles are loaded by the browser directly from HERE's CDN
+(`js.api.here.com`); they are never proxied through our backend.
+
+**Verifying the map:** run the backend (`npm run dev`, with `HERE_API_KEY`)
+and the frontend (`npm run web:dev`, with `web/.env` set), then click each of
+the four presets and Calculate. Expect: the route drawn on the map, A/B
+markers at the endpoints, viewport fitted to the route — and for
+Turin → Chambéry, waypoint markers 1 (Bardonecchia) and 2 (Modane) with the
+route through the Fréjus corridor. For production: `npm run build:all` (set
+`VITE_HERE_MAPS_API_KEY` in `web/.env` before building) then `npm start`.
+
+### Route geometry API
+
+`POST /api/quote` accepts an optional `"includeGeometry": true` flag. The
+response then contains a top-level `routeGeometry` field:
+
+```json
+{
+  "routeGeometry": {
+    "points": [{ "lat": 45.06236, "lng": 7.67994 }],
+    "bounds": { "minLat": 45.06, "maxLat": 45.57, "minLng": 5.92, "maxLng": 7.68 },
+    "pointCount": 7,
+    "simplified": false
+  }
+}
+```
+
+Points come from the corrected, spec-compliant flexible-polyline decoding of
+the HERE route (all sections). Routes longer than 1000 points are uniformly
+downsampled (first and last point always preserved) and flagged
+`"simplified": true`; `bounds` always covers the full route. Without the flag
+the field is omitted entirely.
 
 ## Environment Variables
 
@@ -331,6 +389,12 @@ Notes:
   specific UK lanes take precedence.
 - Unit tests do not perform live HERE calls; HERE responses are mocked at the
   HTTP layer (see `src/routes/golden-quotes.test.ts`).
+- The frontend HERE Maps key (`VITE_HERE_MAPS_API_KEY`) is browser-visible by
+  nature; it must be a separate, restricted key — never the backend routing
+  key.
+- Route geometry is computed by the backend from HERE routing; map rendering
+  is client-side HERE Maps JS loading tiles directly from HERE's CDN.
+- The map is read-only for now — no draggable route editing.
 
 ## Vehicle Profiles
 

@@ -113,6 +113,13 @@ export interface PolylineInputDiagnostics {
 
 export interface RouteTruckResult {
   hereResponse: HereRoutingResponse;
+  /**
+   * Corrected decoded polyline points for the whole route (all sections
+   * concatenated, decoded with the spec-compliant decoder, swap/patch fixes
+   * applied). Empty when the response carries no decodable polylines.
+   * Used for optional route geometry in API responses.
+   */
+  polylinePoints: Coordinates[];
   debug: RouteDebugInfo;
 }
 
@@ -317,6 +324,8 @@ const EMPTY_TUNNEL_DETAILS: TunnelMatchDetails = {
 interface PolylineAnalysisResult {
   alpsCheck: AlpsTunnelCheckResult;
   sanityStats: PolylineSanityStats;
+  /** Corrected decoded points (after swap/patch fixes), all sections concatenated */
+  points: Array<{ lat: number; lng: number }>;
   /** Whether decoded polyline bounds are plausible (within Earth coordinate ranges) */
   boundsPlausible: boolean;
   /** Diagnostics for polyline input extraction */
@@ -394,6 +403,7 @@ function analyzePolylines(response: HereRoutingResponse, origin: Coordinates): P
       polylineLastPoint: null,
       pointCount: 0,
     },
+    points: [],
     boundsPlausible: false,
     inputDiagnostics: EMPTY_DIAGNOSTICS,
     swapApplied: false,
@@ -593,6 +603,7 @@ function analyzePolylines(response: HereRoutingResponse, origin: Coordinates): P
   return {
     alpsCheck,
     sanityStats,
+    points: allPoints,
     boundsPlausible,
     inputDiagnostics,
     swapApplied,
@@ -846,6 +857,7 @@ export function createTruckRouter(client: HereClient) {
 
     return {
       hereResponse: response,
+      polylinePoints: polylineAnalysis.points,
       debug: {
         maskedUrl,
         via: waypoints,
