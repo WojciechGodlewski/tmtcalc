@@ -1,0 +1,337 @@
+/* TMT Calc - neutral, professional internal-tool styling. No external assets. */
+
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #f3f5f7;
+  --card-bg: #ffffff;
+  --border: #d8dee5;
+  --text: #1d2530;
+  --muted: #67707c;
+  --accent: #1f5fbf;
+  --accent-hover: #17498f;
+  --error-bg: #fdeeee;
+  --error-border: #e5a3a3;
+  --error-text: #9c2b2b;
+  --warn-bg: #fdf6e3;
+  --warn-border: #e5cf8c;
+  --ok: #1d7a3e;
+  --highlight-bg: #f0f6ff;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.app {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 1.7rem;
+}
+
+.subtitle {
+  margin: 2px 0 20px;
+  color: var(--muted);
+}
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+
+.card h3 {
+  margin: 12px 0 8px;
+  font-size: 1rem;
+}
+
+/* --- Form --- */
+
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.presets-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.preset-btn {
+  background: var(--highlight-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.preset-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-wide {
+  grid-column: 1 / -1;
+}
+
+.field-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.muted {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+  border-color: var(--accent);
+}
+
+textarea {
+  resize: vertical;
+}
+
+.submit-field {
+  justify-content: flex-end;
+}
+
+.submit-btn {
+  font: inherit;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  padding: 10px 18px;
+  cursor: pointer;
+}
+
+.submit-btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.submit-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* --- States --- */
+
+.loading-card {
+  color: var(--muted);
+}
+
+.error-card {
+  background: var(--error-bg);
+  border-color: var(--error-border);
+  color: var(--error-text);
+}
+
+.error-detail {
+  margin: 6px 0 0;
+  font-size: 0.9rem;
+}
+
+.warning-box {
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-top: 12px;
+  font-size: 0.9rem;
+}
+
+.warning-box ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+/* --- Quote result --- */
+
+.quote-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+
+.quote-price {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--ok);
+}
+
+.quote-model {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.badge {
+  display: inline-block;
+  background: var(--highlight-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  padding: 1px 6px;
+  color: var(--muted);
+  vertical-align: middle;
+}
+
+.quote-summary {
+  display: flex;
+  gap: 24px;
+  margin: 0;
+}
+
+.quote-summary dt {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.quote-summary dd {
+  margin: 2px 0 0;
+  font-weight: 600;
+}
+
+.line-items {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.line-items td {
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.line-items .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.surcharge-highlight td {
+  background: var(--highlight-bg);
+  font-weight: 600;
+}
+
+.total-row td {
+  border-bottom: none;
+  font-weight: 700;
+}
+
+/* --- Route facts --- */
+
+.facts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px 24px;
+  margin: 0;
+}
+
+.facts-grid dt {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.facts-grid dd {
+  margin: 2px 0 0;
+}
+
+.flag-yes {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.flag-no {
+  color: var(--muted);
+}
+
+/* --- Debug --- */
+
+.debug-panel summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.debug-panel pre {
+  background: #f6f8fa;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  overflow-x: auto;
+  font-size: 0.8rem;
+  margin: 12px 0 0;
+}
+
+/* --- Mobile --- */
+
+@media (max-width: 640px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-header {
+    flex-direction: column;
+  }
+
+  .quote-summary {
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+}
