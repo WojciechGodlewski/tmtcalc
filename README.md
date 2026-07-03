@@ -260,6 +260,32 @@ curl -X POST http://localhost:3000/api/quote \
   }'
 ```
 
+## Live smoke tests
+
+`npm run smoke:live` verifies the four golden scenarios above against the
+**real HERE API** through a locally running backend and exits non-zero if any
+expected field (model, countries, surcharges, minimums, Alps/polyline debug
+fields) does not match:
+
+```bash
+# HERE_API_KEY must be available to the backend - either exported in the
+# environment or set in .env (the app loads it via dotenv):
+#   cp .env.example .env   # then set HERE_API_KEY=<your key>
+
+npm run smoke:live
+```
+
+Notes:
+
+- The script targets `http://localhost:3000` (override with `SMOKE_BASE_URL`).
+  If no backend is running there, it starts one itself and stops it on exit.
+- The script never reads or prints the API key; the backend masks it in all
+  URLs, logs, and error messages.
+- **Never commit `.env` or secrets.** `.env` is gitignored - keep it that way,
+  and don't paste keys into code, tests, README, or commit messages.
+- Unlike `npm test` (fully mocked, no network), `smoke:live` performs real
+  HERE geocoding and routing calls and consumes API quota.
+
 ## Known limitations
 
 - `weekend` and `unloadingAfter14` surcharges are accepted in the request but
