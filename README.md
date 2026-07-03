@@ -1,27 +1,57 @@
 # TMT Calc
 
-Backend-only MVP for transport pricing calculator.
+Transport pricing calculator: Node/TypeScript backend (HERE Routing v8) plus a
+small React web UI for the quoting workflow.
 
 ## Setup
 
 ```bash
-# Install dependencies
+# Install backend dependencies
 npm install
+
+# Install frontend dependencies
+npm run web:install
 
 # Copy environment template and add your HERE API key
 cp .env.example .env
 # Edit .env and set HERE_API_KEY=your_key_here
+# HERE_API_KEY is only needed by the BACKEND for live HERE calls.
+# NEVER commit .env or any secrets.
 
-# Start development server
+# Start backend API (http://localhost:3000)
 npm run dev
 
-# Run tests
+# Start frontend dev server in another terminal (http://localhost:5173)
+npm run web:dev
+
+# Run backend tests
 npm test
 
-# Build for production
-npm run build
-npm start
+# Build everything for production
+npm run build:all
+npm start   # serves API + built UI on http://localhost:3000
 ```
+
+## Web UI
+
+The quote calculator UI lives in `web/` (Vite + React + TypeScript, plain CSS).
+
+- **Dev:** run `npm run dev` (backend) and `npm run web:dev` (frontend). The
+  Vite dev server on `http://localhost:5173` proxies `/api` and `/health` to
+  the backend on port 3000, so there is no CORS setup and the frontend never
+  sees any credentials.
+- **Prod:** `npm run build:all` compiles the backend to `dist/` and the
+  frontend to `web/dist/`. When `web/dist` exists, the backend serves it at
+  `/` — one process, same origin for UI and API.
+- **Usage:** enter origin and destination addresses, optionally add via
+  waypoints (one per line), pick a vehicle profile, and click
+  "Calculate quote". Preset buttons fill the form with the four golden
+  scenarios (they don't auto-submit). Results show the price, explainable
+  line items (UK and Alps surcharges highlighted), route facts, and a
+  collapsible "Technical debug" section (hidden by default, masked URLs only,
+  never any API key).
+- The frontend calls the backend only; no API keys exist in frontend code,
+  env, or build output.
 
 ## Environment Variables
 
