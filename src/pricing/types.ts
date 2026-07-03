@@ -206,7 +206,17 @@ export function getCountryGroup(countryCode: string | null): CountryGroup | null
 }
 
 /**
+ * UK country code variants (GB is the ISO alpha-2 standard)
+ */
+const UK_CODES = new Set(['GB', 'GBR', 'UK']);
+
+/**
  * Check if a country matches a group
+ *
+ * Note: the 'EU' lane group means "European coverage" for pricing purposes and
+ * intentionally also matches UK codes. Every EU-lane market model carries a
+ * ukFerry surcharge and/or ukMin, which handle the UK-specific pricing; more
+ * specific UK lanes (e.g. solo-it-uk) are listed before EU lanes and win first.
  */
 export function countryMatchesGroup(countryCode: string | null, group: CountryGroup): boolean {
   if (!countryCode) return group === 'ANY';
@@ -218,8 +228,8 @@ export function countryMatchesGroup(countryCode: string | null, group: CountryGr
   // Direct match
   if (countryGroup === group) return true;
 
-  // EU includes all EU countries
-  if (group === 'EU' && EU_COUNTRIES.has(normalized)) return true;
+  // EU group includes all EU countries plus UK (see note above)
+  if (group === 'EU' && (EU_COUNTRIES.has(normalized) || UK_CODES.has(normalized))) return true;
 
   return false;
 }

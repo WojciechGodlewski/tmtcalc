@@ -9,65 +9,7 @@ import { extractRouteFactsFromHere } from '../here/extract-route-facts.js';
 import { calculateQuote, type PricingResult, type QuoteOptions } from '../pricing/index.js';
 import type { RouteFacts } from '../types/route-facts.js';
 import { ApiError, toApiError, type ApiErrorResponse } from '../errors.js';
-
-/**
- * ISO 3166-1 alpha-3 to alpha-2 country code mapping
- */
-const ALPHA3_TO_ALPHA2: Record<string, string> = {
-  // EU member states
-  AUT: 'AT', BEL: 'BE', BGR: 'BG', HRV: 'HR', CYP: 'CY',
-  CZE: 'CZ', DNK: 'DK', EST: 'EE', FIN: 'FI', FRA: 'FR',
-  DEU: 'DE', GRC: 'GR', HUN: 'HU', IRL: 'IE', ITA: 'IT',
-  LVA: 'LV', LTU: 'LT', LUX: 'LU', MLT: 'MT', NLD: 'NL',
-  POL: 'PL', PRT: 'PT', ROU: 'RO', SVK: 'SK', SVN: 'SI',
-  ESP: 'ES', SWE: 'SE',
-  // Non-EU European countries
-  GBR: 'GB', NOR: 'NO', CHE: 'CH', ISL: 'IS', LIE: 'LI',
-  // Additional commonly used
-  UKR: 'UA', BLR: 'BY', MDA: 'MD', SRB: 'RS', MKD: 'MK',
-  ALB: 'AL', MNE: 'ME', BIH: 'BA', XKX: 'XK', AND: 'AD',
-  MCO: 'MC', SMR: 'SM', VAT: 'VA', TUR: 'TR', RUS: 'RU',
-};
-
-/**
- * Convert country code to ISO alpha-2 format
- * - Normalizes 'UK' to 'GB' (ISO standard)
- */
-function toAlpha2(countryCode: string | null): string | null {
-  if (!countryCode) return null;
-  const normalized = countryCode.toUpperCase().trim();
-  // Special case: UK -> GB (ISO standard)
-  if (normalized === 'UK') return 'GB';
-  if (normalized.length === 2) return normalized;
-  if (normalized.length === 3) return ALPHA3_TO_ALPHA2[normalized] ?? null;
-  return null;
-}
-
-/**
- * Check if a country code represents the United Kingdom
- */
-function isUkCode(countryCode: string | null): boolean {
-  if (!countryCode) return false;
-  const normalized = countryCode.toUpperCase().trim();
-  return normalized === 'GB' || normalized === 'GBR' || normalized === 'UK';
-}
-
-/**
- * EU member state country codes (ISO 3166-1 alpha-2)
- */
-const EU_COUNTRIES = new Set([
-  'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR',
-  'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL',
-  'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE',
-]);
-
-/**
- * Check if a country is in the EU (expects alpha-2 code)
- */
-function isEuCountry(countryCode: string | null): boolean {
-  if (!countryCode) return false;
-  return EU_COUNTRIES.has(countryCode);
-}
+import { applyResolvedGeography } from './geography.js';
 
 /**
  * Location point - either address or coordinates required
@@ -337,40 +279,14 @@ export function createQuoteHandler(hereService: HereService) {
         routeResult.debug.alpsMatch
       );
 
-      // Populate geography with country info from resolved points
-      // Convert to alpha-2 for consistent format
-      const originCountry = toAlpha2(resolvedOrigin.countryCode);
-      const destinationCountry = toAlpha2(resolvedDestination.countryCode);
-
-      routeFacts.geography.originCountry = originCountry;
-      routeFacts.geography.destinationCountry = destinationCountry;
-
-      // Determine if route is international
-      if (originCountry && destinationCountry) {
-        routeFacts.geography.isInternational = originCountry !== destinationCountry;
-      }
-
-      // Determine if route is within EU
-      if (originCountry && destinationCountry) {
-        const originIsEU = isEuCountry(originCountry);
-        const destIsEU = isEuCountry(destinationCountry);
-        routeFacts.geography.isEU = originIsEU && destIsEU;
-      }
-
-      // Normalize all countriesCrossed to alpha-2, add origin/destination
-      const countriesSet = new Set<string>();
-      for (const code of routeFacts.geography.countriesCrossed) {
-        const alpha2 = toAlpha2(code);
-        if (alpha2) countriesSet.add(alpha2);
-      }
-      if (originCountry) countriesSet.add(originCountry);
-      if (destinationCountry) countriesSet.add(destinationCountry);
-      routeFacts.geography.countriesCrossed = Array.from(countriesSet);
-
-      // Update riskFlags.isUK based on normalized country codes
-      const hasUkInRoute = isUkCode(destinationCountry) ||
-        routeFacts.geography.countriesCrossed.some(isUkCode);
-      routeFacts.riskFlags.isUK = hasUkInRoute;
+      // Populate geography (alpha-2 codes, isInternational, isEU,
+      // countriesCrossed, riskFlags.isUK) from the resolved points.
+      // The pricing model selector consumes this same geography.
+      applyResolvedGeography(
+        routeFacts,
+        resolvedOrigin.countryCode,
+        resolvedDestination.countryCode
+      );
 
       // Calculate quote
       const quoteOptions: QuoteOptions = {
@@ -380,13 +296,6 @@ export function createQuoteHandler(hereService: HereService) {
       };
 
       const quote = calculateQuote(body.vehicleProfileId, routeFacts, quoteOptions);
-
-      // DEBUG: Log Alps centers and waypoint distances for diagnostics
-      console.log('[DEBUG /api/quote] alpsCenters:', routeResult.debug.alpsConfig.centers);
-      if (routeResult.debug.alpsCenterDistances.frejus.fromWaypoints.length > 0) {
-        console.log('[DEBUG /api/quote] waypoint[0] -> frejusCenter distance:',
-          routeResult.debug.alpsCenterDistances.frejus.fromWaypoints[0], 'km');
-      }
 
       // Build response
       const resolvedPoints: ResolvedPoints = {

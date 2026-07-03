@@ -133,11 +133,11 @@ curl -X POST http://localhost:3000/api/route-facts \
       "sections": 1
     },
     "geography": {
-      "originCountry": "DEU",
-      "destinationCountry": "POL",
-      "countriesCrossed": ["DEU", "POL"],
+      "originCountry": "DE",
+      "destinationCountry": "PL",
+      "countriesCrossed": ["DE", "PL"],
       "isInternational": true,
-      "isEU": null
+      "isEU": true
     },
     "infrastructure": {
       "hasFerry": false,
@@ -185,6 +185,122 @@ curl -X POST http://localhost:3000/api/route-facts \
   }
 }
 ```
+
+Note: `geography` country codes are always ISO 3166-1 **alpha-2** (`PL`, `IT`, `DE`, `GB`). `UK` and alpha-3 codes from HERE (`POL`, `GBR`, …) are normalized automatically.
+
+### POST /api/quote
+
+Calculate a market-based price for a route. Accepts the same payload as
+`/api/route-facts` (with `via` as an accepted alias for `waypoints`) plus
+optional pricing options (`pricingDateTime`, `unloadingAfter14`, `isWeekend`).
+
+Returns `{ quote, routeFacts, debug }` where `quote` contains the selected
+model and explainable line items:
+
+```json
+{
+  "quote": {
+    "modelId": "solo-it-eu",
+    "modelName": "SOLO IT -> EU",
+    "distanceKm": 430,
+    "lineItems": {
+      "kmCharge": 516,
+      "emptiesCharge": 200,
+      "surcharges": [],
+      "minimumAdjustment": 484
+    },
+    "finalPrice": 1200,
+    "currency": "EUR"
+  }
+}
+```
+
+#### Golden scenario examples (solo_18t_23ep)
+
+```bash
+# A. PL -> EU: price = (routeKm + 200 empty km) * 1.0 EUR/km
+curl -X POST http://localhost:3000/api/quote \
+  -H "Content-Type: application/json" \
+  -d '{
+    "origin": { "address": "Poznań, Poland" },
+    "destination": { "address": "Verona, Italy" },
+    "vehicleProfileId": "solo_18t_23ep"
+  }'
+
+# B. IT -> EU: price = routeKm * 1.2 + 200 flat empties, minimum 1200 EUR
+curl -X POST http://localhost:3000/api/quote \
+  -H "Content-Type: application/json" \
+  -d '{
+    "origin": { "address": "Verona, Italy" },
+    "destination": { "address": "Munich, Germany" },
+    "vehicleProfileId": "solo_18t_23ep"
+  }'
+
+# C. IT -> UK: + 400 EUR UK crossing, minimum 2700 EUR
+curl -X POST http://localhost:3000/api/quote \
+  -H "Content-Type: application/json" \
+  -d '{
+    "origin": { "address": "Verona, Italy" },
+    "destination": { "address": "London, United Kingdom" },
+    "vehicleProfileId": "solo_18t_23ep"
+  }'
+
+# D. IT -> FR via Fréjus: + 200 EUR Alps tunnel surcharge
+#    (debug.hereResponse.alpsMatchReason shows polylineBbox or waypointProximity)
+curl -X POST http://localhost:3000/api/quote \
+  -H "Content-Type: application/json" \
+  -d '{
+    "origin": { "address": "Turin, Italy" },
+    "via": [
+      { "address": "Bardonecchia, Italy" },
+      { "address": "Modane, France" }
+    ],
+    "destination": { "address": "Chambéry, France" },
+    "vehicleProfileId": "solo_18t_23ep"
+  }'
+```
+
+## Live smoke tests
+
+`npm run smoke:live` verifies the four golden scenarios above against the
+**real HERE API** through a locally running backend and exits non-zero if any
+expected field (model, countries, surcharges, minimums, Alps/polyline debug
+fields) does not match:
+
+```bash
+# HERE_API_KEY must be available to the backend - either exported in the
+# environment or set in .env (the app loads it via dotenv):
+#   cp .env.example .env   # then set HERE_API_KEY=<your key>
+
+npm run smoke:live
+```
+
+Notes:
+
+- The script targets `http://localhost:3000` (override with `SMOKE_BASE_URL`).
+  If no backend is running there, it starts one itself and stops it on exit.
+- The script never reads or prints the API key; the backend masks it in all
+  URLs, logs, and error messages.
+- **Never commit `.env` or secrets.** `.env` is gitignored - keep it that way,
+  and don't paste keys into code, tests, README, or commit messages.
+- Unlike `npm test` (fully mocked, no network), `smoke:live` performs real
+  HERE geocoding and routing calls and consumes API quota.
+
+## Known limitations
+
+- `weekend` and `unloadingAfter14` surcharges are accepted in the request but
+  not yet applied (TODO stubs in the pricing engine).
+- Transit countries (`countriesCrossed`) are inferred from toll data and may be
+  incomplete on toll-free routes; origin/destination countries always come from
+  geocoding and drive pricing lane selection.
+- The Alps tunnel surcharge covers Fréjus and Mont Blanc only; other alpine
+  tunnels (Brenner, Gotthard, …) are reported in `infrastructure.tunnels` but
+  do not trigger a surcharge.
+- The `EU` pricing lane group intentionally includes UK destinations (UK
+  specifics are priced via `ukFerry` surcharges and `ukMin` minimums); more
+  specific UK lanes take precedence.
+- Unit tests do not perform live HERE calls; HERE responses are mocked at the
+  HTTP layer (see `src/routes/golden-quotes.test.ts`).
 
 ## Vehicle Profiles
 
