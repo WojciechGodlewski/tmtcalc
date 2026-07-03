@@ -117,7 +117,6 @@ export function calculatePrice(
   if (model.emptyKmFlat !== undefined) {
     // Add empty km to distance and multiply by rate
     // Formula: (routeKm + emptyKm) * rate
-    const totalKm = distanceKm + model.emptyKmFlat;
     kmCharge = distanceKm * model.perKmRate;
     emptiesCharge = model.emptyKmFlat * model.perKmRate;
   } else if (model.emptyFeeFlat !== undefined) {
@@ -135,7 +134,10 @@ export function calculatePrice(
   const isUK = isUKRoute(routeFacts);
   const hasFrejusMontBlanc = hasFrejusOrMontBlanc(routeFacts);
   const hasAlpine = hasAlpineTunnel(routeFacts);
-  const crossesAlps = routeFacts.riskFlags.crossesAlps && hasFrejusMontBlanc;
+  // crossesAlps is set by the extractor only when Frejus/Mont Blanc is detected
+  // via polyline bbox or waypoint proximity (not by action-text mentions alone),
+  // so the alpsTunnel surcharge keys on this flag directly.
+  const crossesAlps = routeFacts.riskFlags.crossesAlps;
 
   if (model.surcharges) {
     for (const surchargeConfig of model.surcharges) {

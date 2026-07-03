@@ -606,13 +606,16 @@ describe('Pricing Engine', () => {
       expect(result.lineItems.surcharges.some((s) => s.type === 'alpsTunnel')).toBe(false);
     });
 
-    it('does NOT apply Alps surcharge when crossesAlps=true but no Fréjus/Mont Blanc', () => {
+    it('does NOT apply Alps surcharge for other alpine tunnels (e.g. Brenner)', () => {
       const model = SOLO_MODELS.find((m) => m.id === 'solo-it-eu')!;
+      // The extractor sets crossesAlps=true ONLY for Fréjus/Mont Blanc detection.
+      // A Brenner route therefore has crossesAlps=false even though it has an
+      // alpine tunnel - and must not get the alpsTunnel surcharge.
       const routeFacts = createTestRouteFacts({
         distanceKm: 800,
         originCountry: 'ITA',
         destinationCountry: 'AUT',
-        crossesAlps: true, // Route crosses Alps (Austria)
+        crossesAlps: false,
         hasTunnel: true,
         tunnels: [{ name: 'Brenner Tunnel', category: 'alpine', country: 'AUT/ITA' }], // Not Fréjus/Mont Blanc
       });
@@ -621,6 +624,59 @@ describe('Pricing Engine', () => {
 
       // Alps surcharge should NOT apply - it's specifically for Fréjus/Mont Blanc
       expect(result.lineItems.surcharges.some((s) => s.type === 'alpsTunnel')).toBe(false);
+    });
+
+    it('applies Alps surcharge when crossesAlps=true (flag is authoritative)', () => {
+      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-eu')!;
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 800,
+        originCountry: 'ITA',
+        destinationCountry: 'FRA',
+        crossesAlps: true,
+        hasTunnel: true,
+        tunnels: [{ name: 'Fréjus Tunnel', category: 'alpine', country: 'FRA/ITA' }],
+      });
+
+      const result = calculatePrice(model, routeFacts);
+
+      const alps = result.lineItems.surcharges.find((s) => s.type === 'alpsTunnel');
+      expect(alps).toBeDefined();
+      expect(alps!.amount).toBe(200);
+    });
+
+    it('finds solo-pl-eu model for PL -> UK (EU lane covers UK) and applies +400', () => {
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 1500,
+        originCountry: 'PL',
+        destinationCountry: 'GB',
+        countriesCrossed: ['PL', 'DE', 'FR', 'GB'],
+        isUK: true,
+      });
+
+      const model = findMatchingModel('solo_18t_23ep', routeFacts);
+      expect(model).not.toBeNull();
+      expect(model!.id).toBe('solo-pl-eu');
+
+      const result = calculatePrice(model!, routeFacts);
+      // (1500 + 200) * 1.0 + 400 UK surcharge = 2100
+      const uk = result.lineItems.surcharges.find((s) => s.type === 'ukFerry');
+      expect(uk).toBeDefined();
+      expect(uk!.amount).toBe(400);
+      expect(result.finalPrice).toBe(2100);
+    });
+
+    it('still prefers solo-it-uk over solo-it-eu for IT -> UK (model order)', () => {
+      const routeFacts = createTestRouteFacts({
+        distanceKm: 1500,
+        originCountry: 'IT',
+        destinationCountry: 'GB',
+        countriesCrossed: ['IT', 'FR', 'GB'],
+        isUK: true,
+      });
+
+      const model = findMatchingModel('solo_18t_23ep', routeFacts);
+      expect(model).not.toBeNull();
+      expect(model!.id).toBe('solo-it-uk');
     });
 
     it('applies Alps surcharge for IT->UK route with Fréjus', () => {

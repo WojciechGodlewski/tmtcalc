@@ -44,6 +44,9 @@ function encodeSignedValue(value: number): string {
   return encodeUnsignedValue(unsigned);
 }
 
+/** Flexible polyline format version (the only version defined by the spec) */
+const FORMAT_VERSION = 1;
+
 /**
  * Encode an array of lat/lng points to HERE Flexible Polyline format
  * @param points Array of points to encode
@@ -57,9 +60,10 @@ export function encodeFlexiblePolyline(points: PolylinePoint[], precision: numbe
 
   const factor = Math.pow(10, precision);
 
-  // Encode header (precision only, no 3rd dimension)
-  // Header format: bits 0-3 = precision, bits 4-6 = 0 (no 3rd dim)
-  let result = encodeUnsignedValue(precision);
+  // Per spec the stream starts with the format version, THEN the header content.
+  // Header content format: bits 0-3 = precision, bits 4-6 = 3rd dim type (0 = absent)
+  let result = encodeUnsignedValue(FORMAT_VERSION);
+  result += encodeUnsignedValue(precision & 0x0f);
 
   let lastLat = 0;
   let lastLng = 0;
@@ -157,12 +161,22 @@ export function decodeFlexiblePolyline(encoded: string): PolylinePoint[] {
   // Decode header (unsigned - no zig-zag)
   let index = 0;
 
-  // First value: header with precision info (unsigned)
-  // All precision info is encoded in this single value
+  // First value: the format version. Per the flexible-polyline spec the stream is
+  //   <version><header content><delta values...>
+  // Skipping the version (a previous bug) shifts every subsequent value by one
+  // slot: precision is read from the version byte (1 -> factor 10) and the real
+  // header content is consumed as the first delta-lat, corrupting all points.
+  const [version, afterVersion] = decodeUnsignedValue(encoded, index);
+  if (version !== FORMAT_VERSION) {
+    throw new Error(`Unsupported flexible polyline format version: ${version}`);
+  }
+  index = afterVersion;
+
+  // Second value: header content with precision info (unsigned)
   const [header, nextIndex] = decodeUnsignedValue(encoded, index);
   index = nextIndex;
 
-  // Extract precision from header (bits 0-3)
+  // Extract precision from header content (bits 0-3)
   const precision = header & 0x0f;
   const factor = Math.pow(10, precision);
 
@@ -170,8 +184,7 @@ export function decodeFlexiblePolyline(encoded: string): PolylinePoint[] {
   const thirdDimType = (header >> 4) & 0x07;
   const has3rdDim = thirdDimType !== 0;
 
-  // Third dimension precision is in bits 7-10 of the SAME header value
-  // (Not a separate encoded value - this was a bug)
+  // Third dimension precision is in bits 7-10 of the same header content value
 
   // Decode points (signed values with zig-zag)
   // HERE Flexible Polyline format: latitude first, then longitude

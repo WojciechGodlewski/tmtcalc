@@ -30,18 +30,38 @@ describe('decodeFlexiblePolyline', () => {
   });
 
   it('should decode a simple polyline with precision 5', () => {
-    // Encoded polyline: "BFoz5xJ67i1B1B7PzIhaxL7Y"
-    // This represents a route with precision 5
-    // We'll test with a known encoded polyline
+    // Official reference vector from https://github.com/heremaps/flexible-polyline:
+    // "BFoz5xJ67i1B1B7PzIhaxL7Y" decodes to exactly these 4 points (precision 5).
+    // Format is <version=1><header content><deltas...> - 'B' is the version byte.
     const encoded = 'BFoz5xJ67i1B1B7PzIhaxL7Y';
     const points = decodeFlexiblePolyline(encoded);
 
-    expect(points.length).toBeGreaterThan(0);
-    // All points should have lat/lng
-    for (const point of points) {
-      expect(typeof point.lat).toBe('number');
-      expect(typeof point.lng).toBe('number');
+    const expected = [
+      { lat: 50.10228, lng: 8.69821 },
+      { lat: 50.10201, lng: 8.69567 },
+      { lat: 50.10063, lng: 8.69150 },
+      { lat: 50.09878, lng: 8.68752 },
+    ];
+
+    expect(points.length).toBe(expected.length);
+    for (let i = 0; i < expected.length; i++) {
+      expect(points[i].lat).toBeCloseTo(expected[i].lat, 5);
+      expect(points[i].lng).toBeCloseTo(expected[i].lng, 5);
     }
+  });
+
+  it('encodes with the spec-compliant version byte prefix', () => {
+    // Real HERE polylines at precision 5 always start with "BF"
+    // (version=1 -> 'B', header content=5 -> 'F')
+    const encoded = encodeFlexiblePolyline([{ lat: 50.10228, lng: 8.69821 }], 5);
+    expect(encoded.startsWith('BF')).toBe(true);
+  });
+
+  it('rejects polylines with an unsupported format version', () => {
+    // 'F' as first byte decodes to version 5, which does not exist
+    expect(() => decodeFlexiblePolyline('Foz5xJ67i1B1B7PzIhaxL7Y')).toThrow(
+      /Unsupported flexible polyline format version/
+    );
   });
 
   it('should decode polyline with 3rd dimension (altitude)', () => {

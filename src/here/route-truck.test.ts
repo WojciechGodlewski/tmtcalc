@@ -629,7 +629,7 @@ describe('TruckRouter', () => {
             transport: { mode: 'truck' },
             // Known-good encoded polyline for Turin->Frejus->Chambery
             // Encoded with encodeFlexiblePolyline([{lat:45.0703,lng:7.6869},{lat:45.1,lng:6.7},{lat:45.5646,lng:5.9178}])
-            polyline: 'Fs5izIkr9uB05Fj4gG436C344E',
+            polyline: 'BFs5izIkr9uB05Fj4gG436C344E',
             actions: [
               { action: 'depart', duration: 0, length: 0, instruction: 'Head west toward Frejus', offset: 0 },
             ],
@@ -723,7 +723,7 @@ describe('TruckRouter', () => {
             transport: { mode: 'truck' },
             // Encoded polyline for [{lat:45.062355,lng:0.000003},{lat:45.06241,lng:7.679937},{lat:45.1,lng:6.7}]
             // First point has corrupted lng≈0
-            polyline: 'F4nhzIAK0_7uB-qHzs_F',
+            polyline: 'BF4nhzIAK0_7uB-qHzs_F',
             actions: [
               { action: 'depart', duration: 0, length: 0, instruction: 'Head west', offset: 0 },
             ],
