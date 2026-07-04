@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { loadHereMaps } from '../here-maps-loader';
-import type { ResolvedPoints, RouteGeometry } from '../types';
+import type { ResolvedPoints, RestrictionSegment, RouteGeometry } from '../types';
 
 /**
  * Browser-side HERE Maps key (separate, restricted key - NOT the backend
@@ -10,10 +10,46 @@ import type { ResolvedPoints, RouteGeometry } from '../types';
 const MAPS_KEY: string | undefined = import.meta.env.VITE_HERE_MAPS_API_KEY;
 
 const ROUTE_STYLE = { strokeColor: '#1f5fbf', lineWidth: 5 };
+const RESTRICTION_STYLE = { strokeColor: '#c62828', lineWidth: 7 };
 
 interface RouteMapProps {
   geometry: RouteGeometry | undefined;
   resolvedPoints: ResolvedPoints | undefined;
+  restrictionSegments?: RestrictionSegment[];
+}
+
+/** Index of the geometry point closest to the given coordinate (squared-degree metric) */
+function nearestIndex(points: Array<{ lat: number; lng: number }>, target: { lat: number; lng: number }): number {
+  let best = 0;
+  let bestDist = Infinity;
+  for (let i = 0; i < points.length; i++) {
+    const dLat = points[i].lat - target.lat;
+    const dLng = points[i].lng - target.lng;
+    const d = dLat * dLat + dLng * dLng;
+    if (d < bestDist) {
+      bestDist = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/**
+ * Points to draw for a restriction segment overlay: the slice of the
+ * (possibly simplified) route geometry between the points nearest to the
+ * segment start/end, or a direct start-end line as a fallback.
+ */
+function restrictionOverlayPoints(
+  geometry: RouteGeometry,
+  segment: RestrictionSegment
+): Array<{ lat: number; lng: number }> | null {
+  if (!segment.startPoint || !segment.endPoint) return null;
+  const from = nearestIndex(geometry.points, segment.startPoint);
+  const to = nearestIndex(geometry.points, segment.endPoint);
+  const [lo, hi] = from <= to ? [from, to] : [to, from];
+  const slice = geometry.points.slice(lo, hi + 1);
+  if (slice.length >= 2) return slice;
+  return [segment.startPoint, segment.endPoint];
 }
 
 function markerSvg(fill: string, label: string): string {
@@ -25,7 +61,7 @@ function markerSvg(fill: string, label: string): string {
   );
 }
 
-export function RouteMap({ geometry, resolvedPoints }: RouteMapProps) {
+export function RouteMap({ geometry, resolvedPoints, restrictionSegments }: RouteMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [loadFailed, setLoadFailed] = useState(false);
 
@@ -66,6 +102,19 @@ export function RouteMap({ geometry, resolvedPoints }: RouteMapProps) {
         }
         map.addObject(new H.map.Polyline(lineString, { style: ROUTE_STYLE }));
 
+        // Restriction segment overlays: only the affected spans are drawn in
+        // red on top of the normal route line. Segments without mappable
+        // coordinates are skipped (textual warning still shows them).
+        for (const segment of restrictionSegments ?? []) {
+          const overlay = restrictionOverlayPoints(geometry, segment);
+          if (!overlay) continue;
+          const overlayLine = new H.geo.LineString();
+          for (const p of overlay) {
+            overlayLine.pushPoint({ lat: p.lat, lng: p.lng });
+          }
+          map.addObject(new H.map.Polyline(overlayLine, { style: RESTRICTION_STYLE }));
+        }
+
         // Markers: origin (A) / destination (B) from resolved points when
         // available, otherwise the route endpoints; numbered via waypoints.
         const first = geometry.points[0];
@@ -105,7 +154,7 @@ export function RouteMap({ geometry, resolvedPoints }: RouteMapProps) {
       if (resizeHandler) window.removeEventListener('resize', resizeHandler);
       if (map) map.dispose();
     };
-  }, [geometry, resolvedPoints]);
+  }, [geometry, resolvedPoints, restrictionSegments]);
 
   if (!MAPS_KEY) {
     return (

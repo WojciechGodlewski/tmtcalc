@@ -195,6 +195,8 @@ export interface HereRouteAction {
 export interface HereRouteSpan {
   /** Offset index in polyline */
   offset: number;
+  /** Indexes into the parent section's notices array (spans=notices) */
+  notices?: number[];
   /** Road names for this span */
   names?: Array<{ value: string; language?: string }>;
   /** Length in meters */
@@ -249,6 +251,8 @@ export interface HereNotice {
   title: string;
   code: string;
   severity: string;
+  /** Structured restriction details (present for e.g. violatedVehicleRestriction) */
+  details?: unknown[];
 }
 
 /**
@@ -778,6 +782,9 @@ export function createTruckRouter(client: HereClient) {
       origin: formatCoords(origin),
       destination: formatCoords(destination),
       return: 'summary,tolls,polyline,actions',
+      // Locate notices on the route (restriction segments). NOTE: 'spans' is
+      // its own query parameter in Routing v8 - it must NOT go into 'return'.
+      spans: 'notices',
       // Vehicle dimensions (in cm) and weight (in kg)
       'vehicle[grossWeight]': profile.grossWeight,
       'vehicle[height]': profile.heightCm,

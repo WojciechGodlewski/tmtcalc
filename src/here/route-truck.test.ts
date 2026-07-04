@@ -448,14 +448,33 @@ describe('TruckRouter', () => {
 
       const url = new URL(mockFetch.mock.calls[0][0]);
       const returnFields = url.searchParams.get('return');
+      expect(returnFields).toBe('summary,tolls,polyline,actions');
       expect(returnFields).toContain('summary');
       expect(returnFields).toContain('tolls');
       expect(returnFields).toContain('polyline'); // Required for Alps tunnel bbox detection
       expect(returnFields).toContain('actions');
-      // Note: 'spans' is not a valid return type in HERE Routing v8 - use polyline geofencing
+      // 'spans' and 'notices' are NOT valid return values in HERE Routing v8
       expect(returnFields).not.toContain('spans');
-      // Note: 'notices' is not a valid return type in HERE Routing v8
       expect(returnFields).not.toContain('notices');
+    });
+
+    it('requests spans=notices as a SEPARATE query parameter (not inside return)', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockRoutingResponse,
+      });
+
+      await router.routeTruck({
+        origin: { lat: 52.52, lng: 13.405 },
+        destination: { lat: 52.2297, lng: 21.0122 },
+        vehicleProfileId: 'ftl_13_6_33ep',
+      });
+
+      const url = new URL(mockFetch.mock.calls[0][0]);
+      // spans is its own query parameter, used to locate notices on the route
+      expect(url.searchParams.get('spans')).toBe('notices');
+      // and return stays exactly as before
+      expect(url.searchParams.get('return')).toBe('summary,tolls,polyline,actions');
     });
 
     it('includes toll information in response', async () => {

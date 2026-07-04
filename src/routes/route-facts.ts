@@ -9,6 +9,7 @@ import { extractRouteFactsFromHere } from '../here/extract-route-facts.js';
 import type { RouteFacts } from '../types/route-facts.js';
 import { ApiError, toApiError, type ApiErrorResponse } from '../errors.js';
 import { applyResolvedGeography } from './geography.js';
+import { buildRestrictionDebug, type RestrictionSegmentPreview } from './restriction-debug.js';
 
 /**
  * Location point - either address or coordinates required
@@ -162,6 +163,10 @@ interface HereResponseDebug {
   firstPointOriginDistanceKmBefore: number | null;
   /** Distance from origin to first decoded point after lng patch (km) */
   firstPointOriginDistanceKmAfter: number | null;
+  /** Number of located truck restriction segments */
+  restrictionSegmentsCount: number;
+  /** Compact sanitized preview of restriction segments (max 5) */
+  restrictionSegmentsPreview: RestrictionSegmentPreview[];
 }
 
 interface AlpsConfig {
@@ -322,6 +327,7 @@ export function createRouteFactsHandler(hereService: HereService) {
             firstPointLngPatchReason: routeResult.debug.firstPointLngPatchReason,
             firstPointOriginDistanceKmBefore: routeResult.debug.firstPointOriginDistanceKmBefore,
             firstPointOriginDistanceKmAfter: routeResult.debug.firstPointOriginDistanceKmAfter,
+            ...buildRestrictionDebug(routeFacts.regulatory.restrictionSegments),
           },
           alpsConfig: routeResult.debug.alpsConfig,
           alpsCenterDistances: routeResult.debug.alpsCenterDistances,

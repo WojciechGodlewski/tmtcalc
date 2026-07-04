@@ -1,4 +1,31 @@
-import type { RouteFacts } from '../types';
+import type { RestrictionSegment, RouteFacts } from '../types';
+
+function formatCoord(p: { lat: number; lng: number } | null): string {
+  if (!p) return 'n/a';
+  return `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`;
+}
+
+function RestrictionSegmentItem({ segment }: { segment: RestrictionSegment }) {
+  return (
+    <li className="restriction-segment">
+      <div className="restriction-segment-head">
+        <span className={`severity-badge severity-${segment.severity}`}>{segment.severity}</span>
+        <strong>{segment.restrictionSummary}</strong>
+      </div>
+      <div className="restriction-segment-meta">
+        {segment.approxDistanceFromOriginKm != null && (
+          <span>Approx. {segment.approxDistanceFromOriginKm} km from origin</span>
+        )}
+        <span>
+          Segment: {formatCoord(segment.startPoint)} → {formatCoord(segment.endPoint)}
+        </span>
+        <span className="muted">
+          {segment.title} <span className="badge">{segment.code}</span>
+        </span>
+      </div>
+    </li>
+  );
+}
 
 function YesNo({ value }: { value: boolean | null }) {
   if (value === null) return <span className="muted">unknown</span>;
@@ -65,11 +92,24 @@ export function RouteFactsPanel({ routeFacts }: RouteFactsPanelProps) {
       {regulatory.truckRestricted && (
         <div className="warning-box">
           <strong>Truck restriction warning</strong>
-          <ul>
-            {regulatory.restrictionReasons.map((reason) => (
-              <li key={reason}>{reason}</li>
-            ))}
-          </ul>
+          <p className="restriction-intro">
+            The calculated route contains at least one segment that violates a
+            restriction for the selected vehicle. Verify this segment manually
+            before using the route operationally.
+          </p>
+          {regulatory.restrictionSegments && regulatory.restrictionSegments.length > 0 ? (
+            <ul className="restriction-segments">
+              {regulatory.restrictionSegments.map((segment, i) => (
+                <RestrictionSegmentItem key={`${segment.sectionIndex}-${segment.spanStartOffset}-${i}`} segment={segment} />
+              ))}
+            </ul>
+          ) : (
+            <ul>
+              {regulatory.restrictionReasons.map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </div>

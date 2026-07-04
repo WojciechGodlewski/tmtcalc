@@ -192,6 +192,60 @@ textarea {
   padding-left: 18px;
 }
 
+.restriction-intro {
+  margin: 6px 0 8px;
+}
+
+.restriction-segments {
+  list-style: none;
+  padding-left: 0 !important;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.restriction-segment {
+  background: #fff;
+  border: 1px solid var(--warn-border);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.restriction-segment-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.restriction-segment-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.severity-badge {
+  display: inline-block;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  background: var(--muted);
+  color: #fff;
+}
+
+.severity-badge.severity-critical {
+  background: #c62828;
+}
+
+.severity-badge.severity-warning {
+  background: #b26a00;
+}
+
 /* --- Quote result --- */
 
 .quote-header {

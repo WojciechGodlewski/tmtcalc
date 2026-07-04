@@ -512,6 +512,105 @@ describe('Route geometry (includeGeometry flag)', () => {
   });
 });
 
+describe('Truck restriction segments (spans=notices)', () => {
+  const RESTRICTION_POINTS = [
+    { lat: 45.4384, lng: 10.9916 },
+    { lat: 46.0, lng: 11.1 },
+    { lat: 46.5, lng: 11.35 },
+    { lat: 47.27, lng: 11.4 },
+    { lat: 48.1374, lng: 11.5755 },
+  ];
+
+  function restrictionSection(withSpans: boolean) {
+    const section = buildSection({
+      lengthMeters: 430000,
+      durationSeconds: 6 * 3600,
+      tollCountries: ['ITA', 'AUT', 'DEU'],
+      polyline: encodeFlexiblePolyline(RESTRICTION_POINTS, 5),
+    });
+    section.notices = [
+      {
+        title: 'Violated vehicle restriction.',
+        code: 'violatedVehicleRestriction',
+        severity: 'critical',
+        details: [{ type: 'violatedVehicleRestriction', maxGrossWeight: 9000 }],
+      },
+    ];
+    if (withSpans) {
+      section.spans = [{ offset: 0 }, { offset: 2, notices: [0] }, { offset: 3 }];
+    }
+    return section;
+  }
+
+  const payload = {
+    origin: { address: 'Verona, Italy' },
+    destination: { address: 'Munich, Germany' },
+    vehicleProfileId: 'solo_18t_23ep',
+  };
+
+  it('returns located restriction segments and sanitized debug preview', async () => {
+    const routingUrls = installFetchMock(buildRoutingResponse([restrictionSection(true)]));
+    const app = buildTestApp();
+    await app.ready();
+
+    const response = await app.inject({ method: 'POST', url: '/api/quote', payload });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+
+    // Quote still calculated - restriction is a warning, not a failure
+    expect(body.quote.modelId).toBe('solo-it-eu');
+
+    const reg = body.routeFacts.regulatory;
+    expect(reg.truckRestricted).toBe(true);
+    expect(reg.restrictionReasons).toContain('Violated vehicle restriction.');
+    expect(reg.restrictionSegments).toBeDefined();
+    expect(reg.restrictionSegments.length).toBeGreaterThan(0);
+
+    const seg = reg.restrictionSegments[0];
+    expect(seg.code).toBe('violatedVehicleRestriction');
+    expect(seg.severity).toBe('critical');
+    expect(seg.spanStartOffset).toBe(2);
+    expect(seg.spanEndOffset).toBe(3);
+    // Segment coordinates come from the decoded polyline
+    expect(seg.startPoint.lat).toBeCloseTo(46.5, 3);
+    expect(seg.startPoint.lng).toBeCloseTo(11.35, 3);
+    expect(seg.endPoint.lat).toBeCloseTo(47.27, 3);
+    // Distance from origin computed and positive
+    expect(seg.approxDistanceFromOriginKm).toBeGreaterThan(50);
+    expect(seg.restrictionSummary).toBe('Maximum gross weight: 9000 kg');
+
+    // Sanitized debug preview present
+    expect(body.debug.hereResponse.restrictionSegmentsCount).toBe(1);
+    expect(body.debug.hereResponse.restrictionSegmentsPreview).toHaveLength(1);
+    expect(body.debug.hereResponse.restrictionSegmentsPreview[0].restrictionSummary)
+      .toBe('Maximum gross weight: 9000 kg');
+    expect(JSON.stringify(body)).not.toContain('test-api-key');
+
+    // HERE request used spans=notices as separate param, not inside return
+    const url = new URL(routingUrls[0]);
+    expect(url.searchParams.get('spans')).toBe('notices');
+    expect(url.searchParams.get('return')).toBe('summary,tolls,polyline,actions');
+  });
+
+  it('falls back to the generic warning when HERE provides no spans', async () => {
+    installFetchMock(buildRoutingResponse([restrictionSection(false)]));
+    const app = buildTestApp();
+    await app.ready();
+
+    const response = await app.inject({ method: 'POST', url: '/api/quote', payload });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+
+    // Generic warning still works
+    expect(body.routeFacts.regulatory.truckRestricted).toBe(true);
+    expect(body.routeFacts.regulatory.restrictionReasons).toContain('Violated vehicle restriction.');
+    // No located segments
+    expect(body.routeFacts.regulatory.restrictionSegments).toBeUndefined();
+    expect(body.debug.hereResponse.restrictionSegmentsCount).toBe(0);
+    expect(body.debug.hereResponse.restrictionSegmentsPreview).toEqual([]);
+  });
+});
+
 describe('Golden case E: robustness', () => {
   it('does not crash when tolls, actions, and polyline are all missing', async () => {
     installFetchMock(buildRoutingResponse([

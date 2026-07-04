@@ -22,6 +22,7 @@ import {
   type AlpsTunnelCheckResult,
   type AlpsMatchReason,
 } from './flexible-polyline.js';
+import { extractRestrictionSegments } from './restriction-segments.js';
 
 /**
  * Safely convert a value to lowercase string
@@ -728,6 +729,10 @@ export function extractRouteFactsFromHere(
   // Extract regulatory info
   const restrictionInfo = extractRestrictions(sections);
 
+  // Locate restriction segments via spans=notices (best effort; empty when
+  // HERE provides no span data - the generic warning still applies then)
+  const restrictionSegments = extractRestrictionSegments(hereResponse);
+
   // Extract countries (best effort from toll data)
   const countriesCrossed = extractCountriesFromTolls(sections);
 
@@ -773,6 +778,7 @@ export function extractRouteFactsFromHere(
     regulatory: {
       truckRestricted: restrictionInfo.truckRestricted,
       restrictionReasons: restrictionInfo.restrictionReasons,
+      ...(restrictionSegments.length > 0 ? { restrictionSegments } : {}),
       adrRequired: null, // Cannot determine from HERE response alone
       lowEmissionZones: [], // Would need additional API call
       weightLimitViolations: null, // Cannot determine from HERE response alone

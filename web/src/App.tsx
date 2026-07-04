@@ -95,6 +95,7 @@ export function App() {
             key={resultSeq}
             geometry={result.routeGeometry}
             resolvedPoints={result.debug?.resolvedPoints}
+            restrictionSegments={result.routeFacts.regulatory.restrictionSegments}
           />
           <RouteFactsPanel routeFacts={result.routeFacts} />
           <DebugPanel debug={result.debug} />

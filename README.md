@@ -89,6 +89,28 @@ Turin → Chambéry, waypoint markers 1 (Bardonecchia) and 2 (Modane) with the
 route through the Fréjus corridor. For production: `npm run build:all` (set
 `VITE_HERE_MAPS_API_KEY` in `web/.env` before building) then `npm start`.
 
+### Truck restriction warnings
+
+When HERE reports that the calculated route violates a restriction for the
+selected vehicle (notice code `violatedVehicleRestriction`), the API and UI
+surface it as a **warning — never as a quote failure**. These notices require
+**manual operational verification**: HERE still returns a route, but a real
+truck may not legally drive the flagged stretch.
+
+Where possible, the affected segments are **located** on the route: the
+backend requests `spans=notices` (a separate HERE Routing v8 query parameter —
+`spans` is not a valid `return` value) and maps each span's polyline offsets
+onto the decoded route. `routeFacts.regulatory.restrictionSegments` then
+contains, per segment: severity, a human-readable `restrictionSummary`
+(max gross weight / height / width / length / axle limits, time-dependent
+restrictions), start/end coordinates, span offsets, and the approximate
+distance from the origin. The UI lists each segment and highlights it in red
+on the route map.
+
+If HERE provides no span data for a notice, the UI falls back to the generic
+restriction warning (`restrictionReasons`) — `truckRestricted` and the
+warning always work regardless.
+
 ### Route geometry API
 
 `POST /api/quote` accepts an optional `"includeGeometry": true` flag. The

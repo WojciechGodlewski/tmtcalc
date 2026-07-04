@@ -30,6 +30,22 @@ export interface Tunnel {
   country: string | null;
 }
 
+/** A concrete route segment where a vehicle restriction applies */
+export interface RestrictionSegment {
+  code: string;
+  severity: string;
+  title: string;
+  sectionIndex: number;
+  noticeIndex: number;
+  spanStartOffset: number;
+  spanEndOffset: number | null;
+  startPoint: { lat: number; lng: number } | null;
+  endPoint: { lat: number; lng: number } | null;
+  approxDistanceFromOriginKm: number | null;
+  details: unknown[];
+  restrictionSummary: string;
+}
+
 export interface RouteFacts {
   route: {
     distanceKm: number;
@@ -55,6 +71,8 @@ export interface RouteFacts {
   regulatory: {
     truckRestricted: boolean;
     restrictionReasons: string[];
+    /** Located restriction segments (from HERE spans=notices); absent when unavailable */
+    restrictionSegments?: RestrictionSegment[];
   };
   riskFlags: {
     isUK: boolean;

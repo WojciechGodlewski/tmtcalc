@@ -51,11 +51,32 @@ export const InfrastructureSchema = z.object({
 });
 
 /**
+ * A concrete route segment where a vehicle restriction applies,
+ * derived from HERE spans=notices (see src/here/restriction-segments.ts)
+ */
+export const RestrictionSegmentSchema = z.object({
+  code: z.string(),
+  severity: z.string(),
+  title: z.string(),
+  sectionIndex: z.number().int().nonnegative(),
+  noticeIndex: z.number().int().nonnegative(),
+  spanStartOffset: z.number().int().nonnegative(),
+  spanEndOffset: z.number().int().nonnegative().nullable(),
+  startPoint: z.object({ lat: z.number(), lng: z.number() }).nullable(),
+  endPoint: z.object({ lat: z.number(), lng: z.number() }).nullable(),
+  approxDistanceFromOriginKm: z.number().nullable(),
+  details: z.array(z.unknown()),
+  restrictionSummary: z.string(),
+});
+
+/**
  * Regulatory constraints and requirements
  */
 export const RegulatorySchema = z.object({
   truckRestricted: z.boolean(),
   restrictionReasons: z.array(z.string()),
+  /** Located restriction segments; absent when HERE provides no span data */
+  restrictionSegments: z.array(RestrictionSegmentSchema).optional(),
   adrRequired: z.boolean().nullable(),
   lowEmissionZones: z.array(z.string()),
   weightLimitViolations: z.boolean().nullable(),
@@ -95,6 +116,7 @@ export const RouteFactsSchema = z.object({
 });
 
 // Type exports inferred from schemas
+export type RestrictionSegment = z.infer<typeof RestrictionSegmentSchema>;
 export type Tunnel = z.infer<typeof TunnelSchema>;
 export type Warning = z.infer<typeof WarningSchema>;
 export type Route = z.infer<typeof RouteSchema>;
@@ -211,6 +233,7 @@ export function mergeRouteFacts(base: RouteFacts, updates: PartialRouteFacts): R
       ...base.regulatory,
       ...updates.regulatory,
       restrictionReasons: updates.regulatory?.restrictionReasons ?? base.regulatory.restrictionReasons,
+      restrictionSegments: updates.regulatory?.restrictionSegments ?? base.regulatory.restrictionSegments,
       lowEmissionZones: updates.regulatory?.lowEmissionZones ?? base.regulatory.lowEmissionZones,
     },
     riskFlags: { ...base.riskFlags, ...updates.riskFlags },
