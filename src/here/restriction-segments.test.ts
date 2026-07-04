@@ -211,9 +211,18 @@ describe('buildRestrictionSummary', () => {
     expect(summary).toContain('Time-dependent restriction');
   });
 
-  it('summarizes restrictedTimes strings', () => {
+  it('never leaks raw restrictedTimes values (only a generic time-dependency note)', () => {
+    // HERE encodes schedules in machine syntax - the raw value must not
+    // appear in any user-facing summary, only a readable generic note.
+    const summary = buildRestrictionSummary([{ restrictedTimes: '++++*+(t1){d1}(h10){h13}' }]);
+    expect(summary).toBe('Time-dependent restriction');
+    expect(summary).not.toContain('++++*+');
+    expect(summary).not.toContain('(t1){d1}');
+    // Human-looking values are hidden too - no exceptions, deterministic rule
     expect(buildRestrictionSummary([{ restrictedTimes: 'Mo-Fr 07:00-09:00' }]))
-      .toBe('Restricted times: Mo-Fr 07:00-09:00');
+      .toBe('Time-dependent restriction');
+    expect(buildRestrictionSummary([{ timeRule: '(M8){M1}' }]))
+      .toBe('Time-dependent restriction');
   });
 
   it('falls back for unrecognized details', () => {

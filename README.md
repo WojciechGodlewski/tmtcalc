@@ -200,6 +200,21 @@ If HERE provides no span data for a notice, the UI falls back to the generic
 restriction warning (`restrictionReasons`) — `truckRestricted` and the
 warning always work regardless.
 
+**Normalized restriction messages.** Restriction segment cards render
+normalized, user-facing summaries from `restrictionSegments[].display`
+(title, message, severity label) — e.g. "Maximum gross weight restriction /
+Limit: 9,000 kg …", "Vehicle height restriction", "Time-dependent truck
+restriction". Raw HERE restriction expressions (encoded schedule syntax such
+as `++++*+(t1){d1}`, machine structs, internal codes) are **never shown in
+the main UI**; they remain only in internal/debug fields. Time-dependent
+restrictions never display the raw schedule — access may depend on date,
+time, tunnel rules or local regulations, so they always require manual
+verification (the card notes "Detailed schedule not decoded. Verify
+manually."). Readable numeric limits (kg / m) are included only when units
+are unambiguous. Coordinates and the approximate "Near" location stay
+visible for operational verification; the collapsed debug section is the
+place for technical details.
+
 **Nearby location labels.** Each located restriction segment is additionally
 reverse-geocoded from its **midpoint** so dispatchers see a readable
 "Near: Brennero, Trentino-South Tyrol, Italy" instead of raw coordinates

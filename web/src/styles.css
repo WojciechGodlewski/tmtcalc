@@ -238,6 +238,16 @@ textarea {
   font-size: 0.92rem;
 }
 
+.restriction-message {
+  margin: 6px 0 0;
+  font-size: 0.88rem;
+}
+
+.restriction-note {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+}
+
 .restriction-segment-meta {
   display: flex;
   flex-wrap: wrap;

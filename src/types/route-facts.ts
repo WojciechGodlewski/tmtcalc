@@ -69,6 +69,18 @@ export const SegmentLocationSchema = z.object({
   source: z.literal('here_reverse_geocode'),
 });
 
+/**
+ * Normalized user-facing display for a restriction segment - the only
+ * restriction text the main UI renders (raw HERE syntax stays in `details`)
+ */
+export const RestrictionDisplaySchema = z.object({
+  title: z.string(),
+  message: z.string(),
+  severityLabel: z.enum(['critical', 'warning', 'info']),
+  manualVerificationRequired: z.boolean(),
+  rawDetailsHidden: z.boolean(),
+});
+
 export const RestrictionSegmentSchema = z.object({
   code: z.string(),
   severity: z.string(),
@@ -86,6 +98,8 @@ export const RestrictionSegmentSchema = z.object({
   midPoint: z.object({ lat: z.number(), lng: z.number() }).nullable().optional(),
   /** Reverse-geocoded nearby location; null when lookup failed/skipped */
   location: SegmentLocationSchema.nullable().optional(),
+  /** Normalized user-facing text (optional for backward compatibility) */
+  display: RestrictionDisplaySchema.optional(),
 });
 
 /**
@@ -135,6 +149,7 @@ export const RouteFactsSchema = z.object({
 });
 
 // Type exports inferred from schemas
+export type RestrictionDisplay = z.infer<typeof RestrictionDisplaySchema>;
 export type SegmentLocation = z.infer<typeof SegmentLocationSchema>;
 export type RestrictionSegment = z.infer<typeof RestrictionSegmentSchema>;
 export type Tunnel = z.infer<typeof TunnelSchema>;

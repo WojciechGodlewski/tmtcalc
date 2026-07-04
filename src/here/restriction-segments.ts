@@ -16,6 +16,7 @@
  */
 
 import { decodeFlexiblePolyline, haversineDistanceKm, type PolylinePoint } from './flexible-polyline.js';
+import { buildRestrictionDisplay, type RestrictionDisplay } from './restriction-display.js';
 import type { HereRoutingResponse } from './route-truck.js';
 
 export interface RestrictionSegmentPoint {
@@ -35,10 +36,12 @@ export interface RestrictionSegment {
   endPoint: RestrictionSegmentPoint | null;
   /** Cumulative route distance from origin to the segment start (1 decimal), or null */
   approxDistanceFromOriginKm: number | null;
-  /** Raw notice details passed through for display/debugging (already compact) */
+  /** Raw notice details - internal/technical only, never rendered by the main UI */
   details: unknown[];
-  /** Human-readable summary derived from the notice details */
+  /** Human-readable summary derived from the notice details (no raw HERE syntax) */
   restrictionSummary: string;
+  /** Normalized user-facing text - the ONLY fields the main UI card renders */
+  display: RestrictionDisplay;
 }
 
 const VIOLATED_RESTRICTION_CODE = 'violatedVehicleRestriction';
@@ -110,13 +113,16 @@ function summarizeDetail(detail: unknown, parts: string[]): void {
     const axleLoad = asNumber(obj.maxAxleLoad) ?? asNumber(obj.maxWeightPerAxle);
     if (axleLoad !== null) parts.push(`Maximum axle load: ${axleLoad} kg`);
 
-    // Time-dependent restrictions
-    if (obj.timeDependent === true) {
-      parts.push('Time-dependent restriction');
-    }
-    if (typeof obj.restrictedTimes === 'string' && obj.restrictedTimes) {
-      parts.push(`Restricted times: ${obj.restrictedTimes}`);
-    } else if (isRecord(obj.restrictedTimes) || Array.isArray(obj.restrictedTimes)) {
+    // Time-dependent restrictions. NEVER include the raw restrictedTimes
+    // value - HERE encodes schedules in machine syntax (e.g. "++++*+(t1){d1}")
+    // that must not surface in user-facing fields. Raw values stay only in
+    // the internal `details` passthrough.
+    if (
+      obj.timeDependent === true ||
+      (obj.restrictedTimes !== undefined && obj.restrictedTimes !== null) ||
+      (obj.timeRule !== undefined && obj.timeRule !== null) ||
+      (obj.schedule !== undefined && obj.schedule !== null)
+    ) {
       parts.push('Time-dependent restriction');
     }
   }
@@ -261,6 +267,11 @@ export function extractRestrictionSegments(response: HereRoutingResponse): Restr
           approxDistanceFromOriginKm,
           details,
           restrictionSummary: buildRestrictionSummary(details),
+          display: buildRestrictionDisplay({
+            details,
+            code: VIOLATED_RESTRICTION_CODE,
+            severity: notice.severity,
+          }),
         });
       }
     }

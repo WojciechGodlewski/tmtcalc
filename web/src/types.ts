@@ -42,6 +42,15 @@ export interface SegmentLocation {
   source: 'here_reverse_geocode';
 }
 
+/** Normalized user-facing restriction text - the only text the card renders */
+export interface RestrictionDisplay {
+  title: string;
+  message: string;
+  severityLabel: 'critical' | 'warning' | 'info';
+  manualVerificationRequired: boolean;
+  rawDetailsHidden: boolean;
+}
+
 /** A concrete route segment where a vehicle restriction applies */
 export interface RestrictionSegment {
   code: string;
@@ -60,6 +69,8 @@ export interface RestrictionSegment {
   midPoint?: { lat: number; lng: number } | null;
   /** Nearby location label; null when lookup failed or was skipped */
   location?: SegmentLocation | null;
+  /** Normalized user-facing text (absent only on older backends) */
+  display?: RestrictionDisplay;
 }
 
 export interface RouteFacts {

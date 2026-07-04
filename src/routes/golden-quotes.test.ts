@@ -839,6 +839,72 @@ describe('Truck restriction segments (spans=notices)', () => {
     expect(body.admissibility.messages.some((m: string) => m.includes('verify the whole route manually'))).toBe(true);
   });
 
+  it('normalizes time-dependent restrictions: no encoded schedule in user-facing fields', async () => {
+    const ENCODED = '++++*+(t1){d1}(h10){h13}';
+    const section = buildSection({
+      lengthMeters: 430000,
+      durationSeconds: 6 * 3600,
+      tollCountries: ['ITA', 'AUT', 'DEU'],
+      polyline: encodeFlexiblePolyline(RESTRICTION_POINTS, 5),
+    });
+    section.notices = [
+      {
+        title: 'Violated vehicle restriction.',
+        code: 'violatedVehicleRestriction',
+        severity: 'critical',
+        details: [{ type: 'violatedVehicleRestriction', restrictedTimes: ENCODED }],
+      },
+    ];
+    section.spans = [{ offset: 0 }, { offset: 2, notices: [0] }, { offset: 3 }];
+    installFetchMock(buildRoutingResponse([section]));
+    const app = buildTestApp();
+    await app.ready();
+
+    const response = await app.inject({ method: 'POST', url: '/api/quote', payload });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+
+    const seg = body.routeFacts.regulatory.restrictionSegments[0];
+
+    // Normalized display is what the UI renders
+    expect(seg.display.title).toBe('Time-dependent truck restriction');
+    expect(seg.display.message).toBe(
+      'Access may depend on date, time, tunnel rules or local traffic regulations. Manual verification required.'
+    );
+    expect(seg.display.severityLabel).toBe('critical');
+    expect(seg.display.manualVerificationRequired).toBe(true);
+    expect(seg.display.rawDetailsHidden).toBe(true);
+
+    // No raw schedule syntax in ANY user-facing field
+    expect(seg.display.title).not.toContain('++++*+');
+    expect(seg.display.message).not.toContain('++++*+');
+    expect(seg.restrictionSummary).toBe('Time-dependent restriction');
+    expect(seg.restrictionSummary).not.toContain(ENCODED);
+    expect(body.debug.hereResponse.restrictionSegmentsPreview[0].restrictionSummary)
+      .not.toContain('++++*+');
+
+    // Raw value may remain only in the internal details passthrough
+    expect(JSON.stringify(seg.details)).toContain(ENCODED);
+
+    // Admissibility unchanged by display normalization
+    expect(body.admissibility.status).toBe('truck_restricted');
+    expect(body.admissibility.quoteValid).toBe(false);
+  });
+
+  it('attaches gross-weight display to located segments', async () => {
+    installFetchMock(buildRoutingResponse([restrictionSection(true)]));
+    const app = buildTestApp();
+    await app.ready();
+
+    const response = await app.inject({ method: 'POST', url: '/api/quote', payload });
+    expect(response.statusCode).toBe(200);
+    const seg = response.json().routeFacts.regulatory.restrictionSegments[0];
+    expect(seg.display.title).toBe('Maximum gross weight restriction');
+    expect(seg.display.message).toContain('Limit: 9,000 kg');
+    expect(seg.display.severityLabel).toBe('critical');
+    expect(seg.display.rawDetailsHidden).toBe(false);
+  });
+
   it('does not fail the quote when reverse geocoding of segment locations fails', async () => {
     installFetchMock(buildRoutingResponse([restrictionSection(true)]));
     revgeocodeFails = true;

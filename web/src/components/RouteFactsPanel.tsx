@@ -18,11 +18,18 @@ function nearText(segment: RestrictionSegment): string | null {
 
 function RestrictionSegmentItem({ segment }: { segment: RestrictionSegment }) {
   const near = nearText(segment);
+  // Normalized user-facing text from the backend. Raw HERE syntax (encoded
+  // schedules, internal codes) never renders here - it lives in debug only.
+  // Fallbacks cover older backend responses without a display object.
+  const severityLabel = segment.display?.severityLabel ?? segment.severity;
+  const title = segment.display?.title ?? segment.restrictionSummary;
+  const message = segment.display?.message ?? null;
+
   return (
     <li className="restriction-segment">
       <div className="restriction-segment-head">
-        <span className={`severity-badge severity-${segment.severity}`}>{segment.severity}</span>
-        <strong>{segment.restrictionSummary}</strong>
+        <span className={`severity-badge severity-${severityLabel}`}>{severityLabel}</span>
+        <strong>{title}</strong>
       </div>
       {near && (
         <div className="restriction-near">
@@ -36,10 +43,11 @@ function RestrictionSegmentItem({ segment }: { segment: RestrictionSegment }) {
         <span>
           Start: {formatCoord(segment.startPoint)} · End: {formatCoord(segment.endPoint)}
         </span>
-        <span className="muted">
-          {segment.title} <span className="badge">{segment.code}</span>
-        </span>
       </div>
+      {message && <p className="restriction-message">{message}</p>}
+      {segment.display?.rawDetailsHidden && (
+        <p className="restriction-note muted">Detailed schedule not decoded. Verify manually.</p>
+      )}
     </li>
   );
 }
