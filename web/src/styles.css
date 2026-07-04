@@ -262,6 +262,85 @@ textarea {
   background: #b26a00;
 }
 
+/* --- Admissibility status banner --- */
+
+.status-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-left-width: 5px;
+  border-left-style: solid;
+}
+
+.status-banner strong {
+  font-size: 1.02rem;
+}
+
+.status-detail {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.status-messages {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 0.88rem;
+}
+
+.status-valid {
+  border-left-color: var(--ok);
+}
+
+.status-valid strong {
+  color: var(--ok);
+}
+
+.status-warning {
+  border-left-color: #b26a00;
+  background: var(--warn-bg);
+}
+
+.status-warning strong {
+  color: #8a5200;
+}
+
+.status-blocked {
+  border-left-color: #c62828;
+  background: var(--error-bg);
+}
+
+.status-blocked strong {
+  color: #9c2b2b;
+}
+
+.status-info {
+  border-left-color: var(--accent);
+}
+
+/* Diagnostic (non-operational) quote presentation */
+
+.quote-card-diagnostic {
+  border-style: dashed;
+  opacity: 0.92;
+}
+
+.diagnostic-label {
+  display: inline-block;
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  color: var(--error-text);
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  margin-bottom: 10px;
+}
+
+.quote-price-diagnostic {
+  color: var(--muted) !important;
+  text-decoration: none;
+}
+
 /* --- Quote result --- */
 
 .quote-header {

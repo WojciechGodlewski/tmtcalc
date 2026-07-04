@@ -11,6 +11,7 @@ import type { RouteFacts } from '../types/route-facts.js';
 import { ApiError, toApiError, type ApiErrorResponse } from '../errors.js';
 import { applyResolvedGeography, toAlpha2 } from './geography.js';
 import { normalizeExcludeCountries, excludedAlpha2Set } from './exclude-countries.js';
+import { evaluateAdmissibility, type Admissibility } from './admissibility.js';
 import { buildRestrictionDebug, type RestrictionSegmentPreview } from './restriction-debug.js';
 import { buildRouteGeometry, type RouteGeometry } from './route-geometry.js';
 
@@ -188,7 +189,15 @@ interface AlpsConfig {
 }
 
 interface QuoteResponse {
-  quote: PricingResult;
+  /** Source of truth for route/quote validity - see src/routes/admissibility.ts */
+  admissibility: Admissibility;
+  /**
+   * Pricing breakdown. Present whenever a pricing model exists (also for
+   * truck_restricted routes, as a diagnostic/indicative figure); absent when
+   * status is pricing_unavailable. validForOperations mirrors
+   * admissibility.quoteValid.
+   */
+  quote?: PricingResult & { validForOperations: boolean };
   routeFacts: RouteFacts;
   /** Present only when the request sets includeGeometry: true */
   routeGeometry?: RouteGeometry;
@@ -338,7 +347,34 @@ export function createQuoteHandler(hereService: HereService) {
         isWeekend: body.isWeekend,
       };
 
-      const quote = calculateQuote(body.vehicleProfileId, routeFacts, quoteOptions);
+      // Compute pricing. A missing pricing model is NOT an error anymore -
+      // it becomes admissibility.status = 'pricing_unavailable' so the route
+      // and map remain available. Other pricing errors still propagate.
+      let pricingResult: PricingResult | undefined;
+      let pricingModelFound = true;
+      try {
+        pricingResult = calculateQuote(body.vehicleProfileId, routeFacts, quoteOptions);
+      } catch (pricingError) {
+        const message = pricingError instanceof Error ? pricingError.message : '';
+        if (message.includes('No pricing model found')) {
+          pricingModelFound = false;
+        } else {
+          throw pricingError;
+        }
+      }
+
+      // Admissibility is the source of truth for route/quote validity.
+      // Only the requested route is evaluated - no baseline or fallback
+      // routes are ever calculated.
+      const admissibility = evaluateAdmissibility({
+        routeFacts,
+        excludeCountries,
+        pricingModelFound,
+      });
+
+      const quote = pricingResult
+        ? { ...pricingResult, validForOperations: admissibility.quoteValid }
+        : undefined;
 
       // Optional route geometry for map display, from the corrected decoded
       // polyline. Omitted entirely unless includeGeometry: true is requested.
@@ -358,7 +394,8 @@ export function createQuoteHandler(hereService: HereService) {
       }
 
       return {
-        quote,
+        admissibility,
+        ...(quote ? { quote } : {}),
         routeFacts,
         ...(routeGeometry ? { routeGeometry } : {}),
         debug: {

@@ -138,8 +138,35 @@ export interface QuoteDebug {
   };
 }
 
+export type AdmissibilityStatus =
+  | 'valid'
+  | 'warning'
+  | 'truck_restricted'
+  | 'no_route'
+  | 'pricing_unavailable';
+
+export type FailedConstraint =
+  | 'route_not_found'
+  | 'excluded_country'
+  | 'vehicle_restriction'
+  | 'pricing_model';
+
+/** Source of truth for route/quote validity */
+export interface Admissibility {
+  status: AdmissibilityStatus;
+  quoteValid: boolean;
+  routeUsable: boolean;
+  hardConstraintViolation: boolean;
+  reason: string | null;
+  messages: string[];
+  failedConstraints: FailedConstraint[];
+}
+
 export interface QuoteResponse {
-  quote: Quote;
+  /** Absent only on older backends; treat missing as valid */
+  admissibility?: Admissibility;
+  /** Absent when admissibility.status is pricing_unavailable */
+  quote?: Quote & { validForOperations?: boolean };
   routeFacts: RouteFacts;
   /** Present only when the request sets includeGeometry: true */
   routeGeometry?: RouteGeometry;

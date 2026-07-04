@@ -89,6 +89,45 @@ Turin → Chambéry, waypoint markers 1 (Bardonecchia) and 2 (Modane) with the
 route through the Fréjus corridor. For production: `npm run build:all` (set
 `VITE_HERE_MAPS_API_KEY` in `web/.env` before building) then `npm start`.
 
+### Route admissibility and quote validity
+
+TMT Calc evaluates **one requested route under the user's hard constraints**.
+It never calculates baseline routes, route candidates, or recommended
+alternatives that ignore those constraints. Hard constraint hierarchy:
+
+1. the route must exist (origin / destination / via routable),
+2. excluded countries must be avoided (strict, enforced before routing),
+3. the selected vehicle must be able to pass the route,
+4. only then is the price a **valid operational quote**.
+
+Ferry / UK crossing / Alps tunnel / tolls / distance / duration / surcharges
+/ minimum price are **pricing components** — they never block a route.
+
+Every successful `/api/quote` response carries a top-level `admissibility`
+object (the source of truth for validity):
+
+| status | meaning | quoteValid | routeUsable |
+|--------|---------|-----------|-------------|
+| `valid` | all hard constraints satisfied, pricing model found | true | true |
+| `warning` | route usable, but HERE returned truck-related notices → **manual verification required** | true | true |
+| `truck_restricted` | HERE reports `violatedVehicleRestriction` for the selected vehicle → "Route found, but not valid for selected vehicle." | false | false |
+| `pricing_unavailable` | route passes all hard constraints, but no pricing model exists for the lane/vehicle (no `quote` in the response) | false | true |
+| `no_route` | represented by the structured `422 NO_ROUTE_FOUND` error response; message names country exclusions when they were requested | — | — |
+
+Truck restriction decision rule (deterministic): a located restriction
+segment with code `violatedVehicleRestriction` and severity `critical`, **or**
+a `violatedVehicleRestriction` notice without span data, ⇒ `truck_restricted`
+— HERE flags violated restrictions for the specific vehicle profile
+explicitly, so this is a hard violation. Other truck-related notices without
+that evidence ⇒ `warning`: the route and quote are delivered (safest
+non-blocking interpretation) but the UI demands manual verification.
+
+For `truck_restricted` responses the pricing breakdown is still included for
+diagnostics (`quote.validForOperations: false`), and the UI labels it
+"Indicative only — not valid for operational use." A route that avoids the
+requested countries can therefore exist and still be invalid for the selected
+vehicle — the exclusions were applied; the problem is vehicle passability.
+
 ### Country exclusion (avoid countries)
 
 Both `POST /api/route-facts` and `POST /api/quote` accept an optional

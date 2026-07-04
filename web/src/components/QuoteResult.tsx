@@ -13,15 +13,24 @@ interface QuoteResultProps {
 
 export function QuoteResult({ result }: QuoteResultProps) {
   const { quote, routeFacts } = result;
+  if (!quote) return null;
   const { lineItems } = quote;
   const geo = routeFacts.geography;
   const excludedCountries = result.debug?.hereRequest?.excludeCountries ?? [];
+  // quoteValid=false (e.g. truck_restricted): the price is shown only as a
+  // diagnostic figure, visually de-emphasized and explicitly labeled.
+  const diagnosticOnly = (result.admissibility?.quoteValid ?? true) === false;
 
   return (
-    <div className="card quote-card">
+    <div className={`card quote-card${diagnosticOnly ? ' quote-card-diagnostic' : ''}`}>
+      {diagnosticOnly && (
+        <div className="diagnostic-label">Indicative only — not valid for operational use.</div>
+      )}
       <div className="quote-header">
         <div>
-          <div className="quote-price">{formatEur(quote.finalPrice)}</div>
+          <div className={diagnosticOnly ? 'quote-price quote-price-diagnostic' : 'quote-price'}>
+            {formatEur(quote.finalPrice)}
+          </div>
           <div className="quote-model">
             {quote.modelName} <span className="badge">{quote.modelId}</span>
           </div>

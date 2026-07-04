@@ -127,6 +127,10 @@ if quote "$R1" '{
 }'; then
   assert "$R1" "
     const q = b.quote, g = b.routeFacts.geography;
+    // Golden routes are expected to be fully valid quotes. If live HERE ever
+    // reports truck restrictions here, this fails visibly so the change can
+    // be investigated instead of silently accepted (see README).
+    check(b.admissibility && b.admissibility.quoteValid === true, 'admissibility.quoteValid = true (status: ' + (b.admissibility && b.admissibility.status) + ')', JSON.stringify(b.admissibility));
     check(q.modelId === 'solo-pl-eu', 'modelId = solo-pl-eu', q.modelId);
     check(g.originCountry === 'PL', 'originCountry = PL', g.originCountry);
     check(g.destinationCountry === 'IT', 'destinationCountry = IT', g.destinationCountry);
@@ -149,6 +153,7 @@ if quote "$R2" '{
 }'; then
   assert "$R2" "
     const q = b.quote, g = b.routeFacts.geography, li = q.lineItems;
+    check(b.admissibility && b.admissibility.quoteValid === true, 'admissibility.quoteValid = true (status: ' + (b.admissibility && b.admissibility.status) + ')', JSON.stringify(b.admissibility));
     check(q.modelId === 'solo-it-eu', 'modelId = solo-it-eu', q.modelId);
     check(g.originCountry === 'IT', 'originCountry = IT', g.originCountry);
     check(g.destinationCountry === 'DE', 'destinationCountry = DE', g.destinationCountry);
@@ -180,6 +185,7 @@ if quote "$R3" '{
 }'; then
   assert "$R3" "
     const q = b.quote, rf = b.routeFacts, li = q.lineItems;
+    check(b.admissibility && b.admissibility.quoteValid === true, 'admissibility.quoteValid = true (status: ' + (b.admissibility && b.admissibility.status) + ')', JSON.stringify(b.admissibility));
     check(q.modelId === 'solo-it-uk', 'modelId = solo-it-uk', q.modelId);
     check(rf.geography.destinationCountry === 'GB', 'destinationCountry = GB', rf.geography.destinationCountry);
     check(rf.riskFlags.isUK === true, 'riskFlags.isUK = true', rf.riskFlags.isUK);
@@ -214,6 +220,7 @@ if quote "$R4" '{
 }'; then
   assert "$R4" "
     const q = b.quote, rf = b.routeFacts, li = q.lineItems, d = b.debug.hereResponse;
+    check(b.admissibility && b.admissibility.quoteValid === true, 'admissibility.quoteValid = true (status: ' + (b.admissibility && b.admissibility.status) + ')', JSON.stringify(b.admissibility));
     check(q.modelId === 'solo-it-eu', 'modelId = solo-it-eu', q.modelId);
     check(b.debug.hereRequest.viaCount === 2, 'viaCount = 2', b.debug.hereRequest.viaCount);
     check(rf.riskFlags.crossesAlps === true, 'riskFlags.crossesAlps = true', rf.riskFlags.crossesAlps);

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { requestQuote } from './api';
 import type { QuoteRequest, QuoteResponse } from './types';
 import { QuoteForm, type FormState } from './components/QuoteForm';
+import { AdmissibilityBanner } from './components/AdmissibilityBanner';
 import { QuoteResult } from './components/QuoteResult';
 import { RouteMap } from './components/RouteMap';
 import { RouteFactsPanel } from './components/RouteFactsPanel';
@@ -96,7 +97,11 @@ export function App() {
 
       {!loading && result && (
         <>
-          <QuoteResult result={result} />
+          {/* Hierarchy: hard status banner -> map -> quote -> facts -> debug */}
+          <AdmissibilityBanner
+            admissibility={result.admissibility}
+            excludedCountries={result.debug?.hereRequest?.excludeCountries ?? []}
+          />
           {/* key remounts the map per result so it initializes exactly once
               per result/container lifecycle and disposes cleanly */}
           <RouteMap
@@ -105,6 +110,7 @@ export function App() {
             resolvedPoints={result.debug?.resolvedPoints}
             restrictionSegments={result.routeFacts.regulatory.restrictionSegments}
           />
+          <QuoteResult result={result} />
           <RouteFactsPanel routeFacts={result.routeFacts} />
           <DebugPanel debug={result.debug} />
         </>

@@ -191,6 +191,13 @@ describe('Golden case A: PL -> IT (Poznań -> Verona, solo_18t_23ep)', () => {
     expect(body.quote.lineItems.emptiesCharge).toBe(200);
     expect(body.quote.finalPrice).toBe(1300);
     expect(body.quote.currency).toBe('EUR');
+
+    // Clean route + pricing model -> valid, operational quote
+    expect(body.admissibility.status).toBe('valid');
+    expect(body.admissibility.quoteValid).toBe(true);
+    expect(body.admissibility.routeUsable).toBe(true);
+    expect(body.admissibility.hardConstraintViolation).toBe(false);
+    expect(body.quote.validForOperations).toBe(true);
   });
 });
 
@@ -724,6 +731,16 @@ describe('Truck restriction segments (spans=notices)', () => {
     expect(seg.approxDistanceFromOriginKm).toBeGreaterThan(50);
     expect(seg.restrictionSummary).toBe('Maximum gross weight: 9000 kg');
 
+    // Admissibility: critical violated segment -> route not valid for vehicle.
+    // The quote object remains as a diagnostic figure, clearly not operational.
+    expect(body.admissibility.status).toBe('truck_restricted');
+    expect(body.admissibility.quoteValid).toBe(false);
+    expect(body.admissibility.routeUsable).toBe(false);
+    expect(body.admissibility.hardConstraintViolation).toBe(true);
+    expect(body.admissibility.failedConstraints).toContain('vehicle_restriction');
+    expect(body.admissibility.reason).toBe('Route found, but not valid for selected vehicle.');
+    expect(body.quote.validForOperations).toBe(false);
+
     // Sanitized debug preview present
     expect(body.debug.hereResponse.restrictionSegmentsCount).toBe(1);
     expect(body.debug.hereResponse.restrictionSegmentsPreview).toHaveLength(1);
@@ -753,6 +770,57 @@ describe('Truck restriction segments (spans=notices)', () => {
     expect(body.routeFacts.regulatory.restrictionSegments).toBeUndefined();
     expect(body.debug.hereResponse.restrictionSegmentsCount).toBe(0);
     expect(body.debug.hereResponse.restrictionSegmentsPreview).toEqual([]);
+
+    // Documented rule: a violatedVehicleRestriction notice WITHOUT span data
+    // is still treated as truck_restricted (HERE explicitly flagged the
+    // vehicle), with a message to verify the whole route manually.
+    expect(body.admissibility.status).toBe('truck_restricted');
+    expect(body.admissibility.quoteValid).toBe(false);
+    expect(body.admissibility.messages.some((m: string) => m.includes('verify the whole route manually'))).toBe(true);
+  });
+
+  it('returns warning status for non-violated truck notices (quote stays valid)', async () => {
+    const section = buildSection({
+      lengthMeters: 430000,
+      durationSeconds: 6 * 3600,
+      tollCountries: ['ITA', 'AUT', 'DEU'],
+    });
+    section.notices = [
+      { title: 'Height restriction ahead', code: 'truckRestriction', severity: 'info' },
+    ];
+    installFetchMock(buildRoutingResponse([section]));
+    const app = buildTestApp();
+    await app.ready();
+
+    const response = await app.inject({ method: 'POST', url: '/api/quote', payload });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+
+    expect(body.admissibility.status).toBe('warning');
+    expect(body.admissibility.quoteValid).toBe(true);
+    expect(body.admissibility.routeUsable).toBe(true);
+    expect(body.admissibility.hardConstraintViolation).toBe(false);
+    expect(body.quote.validForOperations).toBe(true);
+    expect(body.admissibility.messages[0]).toContain('Manual verification required');
+  });
+
+  it('never issues extra HERE routing calls for restricted routes (no baseline/fallback)', async () => {
+    const routingUrls = installFetchMock(buildRoutingResponse([restrictionSection(true)]));
+    const app = buildTestApp();
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/quote',
+      payload: { ...payload, excludeCountries: ['CH'] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().admissibility.status).toBe('truck_restricted');
+    // Exactly ONE routing request - the requested route under the user's
+    // constraints. No baseline route ignoring exclusions, no candidates.
+    expect(routingUrls).toHaveLength(1);
+    expect(new URL(routingUrls[0]).searchParams.get('exclude[countries]')).toBe('CHE');
   });
 });
 

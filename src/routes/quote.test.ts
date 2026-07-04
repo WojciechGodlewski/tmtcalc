@@ -351,9 +351,10 @@ describe('POST /api/quote', () => {
       expect(body.routeFacts.geography.destinationCountry).toBe('DE');
     });
 
-    it('returns 400 when no pricing model matches and shows actual countries', async () => {
-      // Create a response with unsupported countries (Spain -> Portugal)
-      // No model exists for ES -> PT for solo_18t_23ep
+    it('returns 200 with admissibility pricing_unavailable when no pricing model matches', async () => {
+      // Spain -> Portugal: no model exists for ES -> PT for solo_18t_23ep.
+      // Since the admissibility model, a missing pricing model is NOT an
+      // error - the route stays usable, only the quote is unavailable.
       const mockService = createMockHereService({
         tollCountries: ['ESP', 'PRT'],
         originCountry: 'ESP',
@@ -372,13 +373,17 @@ describe('POST /api/quote', () => {
         },
       });
 
-      expect(response.statusCode).toBe(400);
+      expect(response.statusCode).toBe(200);
       const body = response.json();
-      expect(body.error.code).toBe('NO_MODEL_AVAILABLE');
-      // Error message should contain actual countries (alpha-2), not "unknown"
-      expect(body.error.message).toContain('ES');
-      expect(body.error.message).toContain('PT');
-      expect(body.error.message).not.toContain('unknown');
+      expect(body.admissibility.status).toBe('pricing_unavailable');
+      expect(body.admissibility.quoteValid).toBe(false);
+      expect(body.admissibility.routeUsable).toBe(true);
+      expect(body.admissibility.hardConstraintViolation).toBe(false);
+      expect(body.admissibility.failedConstraints).toEqual(['pricing_model']);
+      expect(body.quote).toBeUndefined();
+      // Route facts still available (alpha-2 countries)
+      expect(body.routeFacts.geography.originCountry).toBe('ES');
+      expect(body.routeFacts.geography.destinationCountry).toBe('PT');
     });
   });
 
