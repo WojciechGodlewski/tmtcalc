@@ -125,6 +125,8 @@ export interface QuoteDebug {
   resolvedPoints?: ResolvedPoints;
   hereRequest?: {
     viaCount?: number;
+    /** Normalized alpha-3 codes sent to HERE as exclude[countries] */
+    excludeCountries?: string[];
   };
   hereResponse?: {
     alpsMatch?: { frejus: boolean; montBlanc: boolean };
@@ -161,4 +163,6 @@ export interface QuoteRequest {
   vehicleProfileId: VehicleProfileId;
   /** Ask the backend for decoded route geometry (map display) */
   includeGeometry?: boolean;
+  /** Strict country exclusion (alpha-2 or alpha-3 codes) */
+  excludeCountries?: string[];
 }

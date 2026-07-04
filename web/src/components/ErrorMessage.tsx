@@ -25,9 +25,26 @@ function describe(error: unknown): { title: string; detail?: string } {
           title: 'HERE routing service error',
           detail: `The route provider rejected or failed the request. ${error.message}`,
         };
-      case 'VALIDATION_ERROR':
+      case 'VALIDATION_ERROR': {
+        // Exclusion-related validation errors are already user-friendly -
+        // surface them directly as the headline.
+        const exclusionMessages = [
+          'Origin cannot be in an excluded country.',
+          'Destination cannot be in an excluded country.',
+        ];
+        if (exclusionMessages.includes(error.message) || error.message.startsWith('Unsupported exclude country code')) {
+          return { title: error.message };
+        }
         return {
           title: 'Invalid request',
+          detail: error.message,
+        };
+      }
+      case 'NO_ROUTE_FOUND':
+        // Backend message says whether exclusions were involved, e.g.
+        // "No route found ... with the selected country exclusions."
+        return {
+          title: 'No route found',
           detail: error.message,
         };
       case 'TIMEOUT_ERROR':

@@ -512,6 +512,151 @@ describe('Route geometry (includeGeometry flag)', () => {
   });
 });
 
+describe('Country exclusion (excludeCountries)', () => {
+  const veronaMunichResponse = () => buildRoutingResponse([
+    buildSection({ lengthMeters: 480000, durationSeconds: 7 * 3600, tollCountries: ['ITA', 'AUT', 'DEU'] }),
+  ]);
+
+  const payload = {
+    origin: { address: 'Verona, Italy' },
+    destination: { address: 'Munich, Germany' },
+    vehicleProfileId: 'solo_18t_23ep',
+  };
+
+  it('passes normalized exclude[countries]=CHE to HERE and echoes it in debug', async () => {
+    const routingUrls = installFetchMock(veronaMunichResponse());
+    const app = buildTestApp();
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/quote',
+      payload: { ...payload, excludeCountries: ['CH'] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.quote.modelId).toBe('solo-it-eu');
+    expect(body.debug.hereRequest.excludeCountries).toEqual(['CHE']);
+
+    const url = new URL(routingUrls[0]);
+    expect(url.searchParams.get('exclude[countries]')).toBe('CHE');
+    // Other HERE params untouched
+    expect(url.searchParams.get('return')).toBe('summary,tolls,polyline,actions');
+    expect(url.searchParams.get('spans')).toBe('notices');
+  });
+
+  it('accepts mixed alpha-2/alpha-3/case input and deduplicates', async () => {
+    const routingUrls = installFetchMock(veronaMunichResponse());
+    const app = buildTestApp();
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/quote',
+      payload: { ...payload, excludeCountries: ['CH', 'CHE', 'ch'] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().debug.hereRequest.excludeCountries).toEqual(['CHE']);
+    expect(new URL(routingUrls[0]).searchParams.get('exclude[countries]')).toBe('CHE');
+  });
+
+  it('sends no exclude[countries] parameter when the field is absent', async () => {
+    const routingUrls = installFetchMock(veronaMunichResponse());
+    const app = buildTestApp();
+    await app.ready();
+
+    const response = await app.inject({ method: 'POST', url: '/api/quote', payload });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().debug.hereRequest.excludeCountries).toEqual([]);
+    expect(new URL(routingUrls[0]).searchParams.has('exclude[countries]')).toBe(false);
+  });
+
+  it('rejects unsupported codes with 400 before any HERE call', async () => {
+    const routingUrls = installFetchMock(veronaMunichResponse());
+    const app = buildTestApp();
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/quote',
+      payload: { ...payload, excludeCountries: ['XX'] },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json();
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(body.error.message).toBe('Unsupported exclude country code: XX');
+    expect(routingUrls).toHaveLength(0);
+  });
+
+  it('rejects an excluded origin with 400 before calling HERE routing', async () => {
+    const routingUrls = installFetchMock(veronaMunichResponse());
+    const app = buildTestApp();
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/quote',
+      payload: { ...payload, excludeCountries: ['IT'] }, // origin Verona is in Italy
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.message).toBe('Origin cannot be in an excluded country.');
+    expect(routingUrls).toHaveLength(0); // routing never called
+  });
+
+  it('rejects an excluded destination with 400 before calling HERE routing', async () => {
+    const routingUrls = installFetchMock(veronaMunichResponse());
+    const app = buildTestApp();
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/quote',
+      payload: { ...payload, excludeCountries: ['DE'] }, // destination Munich is in Germany
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.message).toBe('Destination cannot be in an excluded country.');
+    expect(routingUrls).toHaveLength(0);
+  });
+
+  it('also passes exclude[countries] through /api/route-facts', async () => {
+    const routingUrls = installFetchMock(veronaMunichResponse());
+    const app = buildTestApp();
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/route-facts',
+      payload: { ...payload, excludeCountries: 'CH, AT' }, // comma-string form
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().debug.hereRequest.excludeCountries).toEqual(['CHE', 'AUT']);
+    expect(new URL(routingUrls[0]).searchParams.get('exclude[countries]')).toBe('CHE,AUT');
+  });
+
+  it('returns structured NO_ROUTE_FOUND when HERE finds no route under exclusions', async () => {
+    installFetchMock({ routes: [] });
+    const app = buildTestApp();
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/quote',
+      payload: { ...payload, excludeCountries: ['CH'] },
+    });
+
+    expect(response.statusCode).toBe(422);
+    const body = response.json();
+    expect(body.error.code).toBe('NO_ROUTE_FOUND');
+    expect(body.error.message).toContain('country exclusions');
+  });
+});
+
 describe('Truck restriction segments (spans=notices)', () => {
   const RESTRICTION_POINTS = [
     { lat: 45.4384, lng: 10.9916 },

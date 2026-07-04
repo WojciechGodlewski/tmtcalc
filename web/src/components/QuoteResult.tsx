@@ -15,6 +15,7 @@ export function QuoteResult({ result }: QuoteResultProps) {
   const { quote, routeFacts } = result;
   const { lineItems } = quote;
   const geo = routeFacts.geography;
+  const excludedCountries = result.debug?.hereRequest?.excludeCountries ?? [];
 
   return (
     <div className="card quote-card">
@@ -42,6 +43,12 @@ export function QuoteResult({ result }: QuoteResultProps) {
           </div>
         </dl>
       </div>
+
+      {excludedCountries.length > 0 && (
+        <p className="excluded-countries">
+          Excluded countries: <strong>{excludedCountries.join(', ')}</strong>
+        </p>
+      )}
 
       <h3>Line items</h3>
       <table className="line-items">

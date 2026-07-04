@@ -4,6 +4,8 @@ export interface FormState {
   origin: string;
   destination: string;
   viaText: string;
+  /** Comma-separated country codes to exclude, e.g. "CH, AT" */
+  excludeCountriesText: string;
   vehicleProfileId: VehicleProfileId;
 }
 
@@ -16,15 +18,15 @@ interface Preset {
 const PRESETS: Preset[] = [
   {
     label: 'Poznań → Verona',
-    state: { origin: 'Poznań, Poland', destination: 'Verona, Italy', viaText: '', vehicleProfileId: 'solo_18t_23ep' },
+    state: { origin: 'Poznań, Poland', destination: 'Verona, Italy', viaText: '', excludeCountriesText: '', vehicleProfileId: 'solo_18t_23ep' },
   },
   {
     label: 'Verona → Munich',
-    state: { origin: 'Verona, Italy', destination: 'Munich, Germany', viaText: '', vehicleProfileId: 'solo_18t_23ep' },
+    state: { origin: 'Verona, Italy', destination: 'Munich, Germany', viaText: '', excludeCountriesText: '', vehicleProfileId: 'solo_18t_23ep' },
   },
   {
     label: 'Verona → London',
-    state: { origin: 'Verona, Italy', destination: 'London, United Kingdom', viaText: '', vehicleProfileId: 'solo_18t_23ep' },
+    state: { origin: 'Verona, Italy', destination: 'London, United Kingdom', viaText: '', excludeCountriesText: '', vehicleProfileId: 'solo_18t_23ep' },
   },
   {
     label: 'Turin → Chambéry (Fréjus)',
@@ -32,6 +34,7 @@ const PRESETS: Preset[] = [
       origin: 'Turin, Italy',
       destination: 'Chambéry, France',
       viaText: 'Bardonecchia, Italy\nModane, France',
+      excludeCountriesText: '',
       vehicleProfileId: 'solo_18t_23ep',
     },
   },
@@ -106,6 +109,40 @@ export function QuoteForm({ form, loading, onChange, onSubmit }: QuoteFormProps)
             placeholder={'e.g.\nBardonecchia, Italy\nModane, France'}
             onChange={(e) => set({ viaText: e.target.value })}
           />
+        </label>
+
+        <label className="field">
+          <span className="field-label">
+            Avoid countries{' '}
+            <button
+              type="button"
+              className="preset-btn quick-avoid-btn"
+              onClick={() => {
+                const codes = form.excludeCountriesText
+                  .split(',')
+                  .map((c) => c.trim().toUpperCase())
+                  .filter(Boolean);
+                if (!codes.includes('CH') && !codes.includes('CHE')) {
+                  set({
+                    excludeCountriesText: codes.length > 0
+                      ? `${form.excludeCountriesText.trim().replace(/,\s*$/, '')}, CH`
+                      : 'CH',
+                  });
+                }
+              }}
+            >
+              Avoid CH
+            </button>
+          </span>
+          <input
+            type="text"
+            value={form.excludeCountriesText}
+            placeholder="e.g. CH, AT"
+            onChange={(e) => set({ excludeCountriesText: e.target.value })}
+          />
+          <span className="field-help muted">
+            Optional. Enter country codes separated by commas, e.g. CH, AT.
+          </span>
         </label>
 
         <label className="field">

@@ -8,7 +8,8 @@ import type { HereService } from '../here/index.js';
 import { extractRouteFactsFromHere } from '../here/extract-route-facts.js';
 import type { RouteFacts } from '../types/route-facts.js';
 import { ApiError, toApiError, type ApiErrorResponse } from '../errors.js';
-import { applyResolvedGeography } from './geography.js';
+import { applyResolvedGeography, toAlpha2 } from './geography.js';
+import { normalizeExcludeCountries, excludedAlpha2Set } from './exclude-countries.js';
 import { buildRestrictionDebug, type RestrictionSegmentPreview } from './restriction-debug.js';
 
 /**
@@ -38,6 +39,8 @@ const RouteFactsRequestSchema = z.object({
   waypoints: z.array(LocationSchema).optional(),
   via: z.array(LocationSchema).optional(),
   vehicleProfileId: VehicleProfileIdSchema,
+  // Strict country exclusion: array of codes or comma-separated string
+  excludeCountries: z.union([z.array(z.string()), z.string()]).optional(),
 }).transform((data) => ({
   ...data,
   // Use 'via' if 'waypoints' is not provided, internally use 'waypoints'
@@ -64,6 +67,8 @@ interface HereRequestDebug {
   maskedUrl: string;
   via: Array<{ lat: number; lng: number }>;
   viaCount: number;
+  /** Normalized alpha-3 codes sent to HERE as exclude[countries] */
+  excludeCountries: string[];
 }
 
 interface TunnelMatchDetail {
@@ -250,11 +255,27 @@ export function createRouteFactsHandler(hereService: HereService) {
     const body = parseResult.data;
 
     try {
+      // Normalize strict country exclusions (throws 400 on unsupported codes)
+      const excludeCountries = normalizeExcludeCountries(body.excludeCountries);
+      const excludedAlpha2 = excludedAlpha2Set(excludeCountries);
+
       // Resolve all points to coordinates
       const [resolvedOrigin, resolvedDestination] = await Promise.all([
         resolvePoint(hereService, body.origin),
         resolvePoint(hereService, body.destination),
       ]);
+
+      // Strict exclusion sanity checks - fail BEFORE calling HERE routing
+      if (excludedAlpha2.size > 0) {
+        const originAlpha2 = toAlpha2(resolvedOrigin.countryCode);
+        const destAlpha2 = toAlpha2(resolvedDestination.countryCode);
+        if (originAlpha2 && excludedAlpha2.has(originAlpha2)) {
+          throw new ApiError('VALIDATION_ERROR', 'Origin cannot be in an excluded country.', 400);
+        }
+        if (destAlpha2 && excludedAlpha2.has(destAlpha2)) {
+          throw new ApiError('VALIDATION_ERROR', 'Destination cannot be in an excluded country.', 400);
+        }
+      }
 
       // Resolve waypoints if provided
       let resolvedWaypoints: ResolvedPoint[] | undefined;
@@ -270,7 +291,19 @@ export function createRouteFactsHandler(hereService: HereService) {
         destination: { lat: resolvedDestination.lat, lng: resolvedDestination.lng },
         waypoints: resolvedWaypoints?.map((wp) => ({ lat: wp.lat, lng: wp.lng })),
         vehicleProfileId: body.vehicleProfileId,
+        ...(excludeCountries.length > 0 ? { excludeCountries } : {}),
       });
+
+      // HERE returned no route at all (can happen with strict exclusions)
+      if (!routeResult.hereResponse.routes || routeResult.hereResponse.routes.length === 0) {
+        throw new ApiError(
+          'NO_ROUTE_FOUND',
+          excludeCountries.length > 0
+            ? 'No route found between origin and destination with the selected country exclusions.'
+            : 'No route found between origin and destination.',
+          422
+        );
+      }
 
       // Extract RouteFacts, passing the Alps match from route-truck
       // (includes waypoint proximity detection when polyline decoding fails)
@@ -305,6 +338,7 @@ export function createRouteFactsHandler(hereService: HereService) {
             maskedUrl: routeResult.debug.maskedUrl,
             via: routeResult.debug.via,
             viaCount: routeResult.debug.viaCount,
+            excludeCountries,
           },
           hereResponse: {
             sectionsCount: routeResult.debug.sectionsCount,

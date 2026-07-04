@@ -477,6 +477,41 @@ describe('TruckRouter', () => {
       expect(url.searchParams.get('return')).toBe('summary,tolls,polyline,actions');
     });
 
+    it('sends exclude[countries] as its own parameter when excludeCountries is set', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockRoutingResponse,
+      });
+
+      await router.routeTruck({
+        origin: { lat: 45.44, lng: 10.99 },
+        destination: { lat: 48.14, lng: 11.58 },
+        vehicleProfileId: 'solo_18t_23ep',
+        excludeCountries: ['CHE', 'AUT'],
+      });
+
+      const url = new URL(mockFetch.mock.calls[0][0]);
+      expect(url.searchParams.get('exclude[countries]')).toBe('CHE,AUT');
+      // return is untouched by exclusions
+      expect(url.searchParams.get('return')).toBe('summary,tolls,polyline,actions');
+    });
+
+    it('sends NO exclude[countries] parameter when excludeCountries is absent', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockRoutingResponse,
+      });
+
+      await router.routeTruck({
+        origin: { lat: 45.44, lng: 10.99 },
+        destination: { lat: 48.14, lng: 11.58 },
+        vehicleProfileId: 'solo_18t_23ep',
+      });
+
+      const url = new URL(mockFetch.mock.calls[0][0]);
+      expect(url.searchParams.has('exclude[countries]')).toBe(false);
+    });
+
     it('includes toll information in response', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

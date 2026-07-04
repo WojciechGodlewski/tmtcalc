@@ -35,6 +35,8 @@ export interface RouteTruckParams {
   destination: Coordinates;
   waypoints?: Coordinates[];
   vehicleProfileId: VehicleProfileId;
+  /** ISO alpha-3 country codes for HERE exclude[countries] (strict exclusion) */
+  excludeCountries?: string[];
 }
 
 export interface RouteDebugInfo {
@@ -766,7 +768,7 @@ export function createTruckRouter(client: HereClient) {
    * @throws HereApiError on API errors
    */
   async function routeTruck(params: RouteTruckParams): Promise<RouteTruckResult> {
-    const { origin, destination, waypoints = [], vehicleProfileId } = params;
+    const { origin, destination, waypoints = [], vehicleProfileId, excludeCountries = [] } = params;
 
     // Get vehicle profile
     const profile = getVehicleProfile(vehicleProfileId);
@@ -792,6 +794,12 @@ export function createTruckRouter(client: HereClient) {
       'vehicle[length]': profile.lengthCm,
       'vehicle[axleCount]': profile.axleCount,
     };
+
+    // Strict territory exclusion (alpha-3 codes). Only sent when non-empty;
+    // this is its own query parameter, never part of 'return'.
+    if (excludeCountries.length > 0) {
+      requestParams['exclude[countries]'] = excludeCountries.join(',');
+    }
 
     // Build multi-params for via points (same key repeated)
     const multiParams: Record<string, string[]> = {};

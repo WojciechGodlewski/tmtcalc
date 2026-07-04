@@ -12,6 +12,7 @@ const INITIAL_FORM: FormState = {
   origin: '',
   destination: '',
   viaText: '',
+  excludeCountriesText: '',
   vehicleProfileId: 'solo_18t_23ep',
 };
 
@@ -41,12 +42,19 @@ export function App() {
       .filter((line) => line.length > 0)
       .map((address) => ({ address }));
 
+    // Comma-separated codes -> array; tolerant of whitespace and case
+    const excludeCountries = form.excludeCountriesText
+      .split(',')
+      .map((code) => code.trim().toUpperCase())
+      .filter((code) => code.length > 0);
+
     const payload: QuoteRequest = {
       origin: { address: origin },
       destination: { address: destination },
       ...(via.length > 0 ? { via } : {}),
       vehicleProfileId: form.vehicleProfileId,
       includeGeometry: true,
+      ...(excludeCountries.length > 0 ? { excludeCountries } : {}),
     };
 
     setLoading(true);

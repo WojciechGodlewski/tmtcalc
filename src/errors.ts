@@ -11,7 +11,8 @@ export type ApiErrorCode =
   | 'INTERNAL_ERROR'
   | 'TIMEOUT_ERROR'
   | 'NOT_FOUND'
-  | 'NO_MODEL_AVAILABLE';
+  | 'NO_MODEL_AVAILABLE'
+  | 'NO_ROUTE_FOUND';
 
 /**
  * Standardized error response structure

@@ -89,6 +89,56 @@ Turin → Chambéry, waypoint markers 1 (Bardonecchia) and 2 (Modane) with the
 route through the Fréjus corridor. For production: `npm run build:all` (set
 `VITE_HERE_MAPS_API_KEY` in `web/.env` before building) then `npm start`.
 
+### Country exclusion (avoid countries)
+
+Both `POST /api/route-facts` and `POST /api/quote` accept an optional
+`excludeCountries` field — a **strict** territory exclusion passed to HERE as
+`exclude[countries]=<alpha-3 list>`. This is not a soft preference: HERE will
+not route through the excluded countries at all.
+
+```bash
+# Verona -> Munich without exclusions (route typically goes via Austria)
+curl -X POST http://localhost:3000/api/quote \
+  -H "Content-Type: application/json" \
+  -d '{
+    "origin": { "address": "Verona, Italy" },
+    "destination": { "address": "Munich, Germany" },
+    "vehicleProfileId": "solo_18t_23ep"
+  }'
+
+# Verona -> Munich avoiding Switzerland
+# The HERE request includes exclude[countries]=CHE; the route (and the map)
+# reflect the recalculated path, which may be longer or different.
+curl -X POST http://localhost:3000/api/quote \
+  -H "Content-Type: application/json" \
+  -d '{
+    "origin": { "address": "Verona, Italy" },
+    "destination": { "address": "Munich, Germany" },
+    "vehicleProfileId": "solo_18t_23ep",
+    "excludeCountries": ["CH"]
+  }'
+```
+
+Input rules:
+
+- Array of codes (`["CH", "AT"]`) or a comma-separated string (`"CH, AT"`).
+- Alpha-2 and alpha-3 are both accepted and normalized to alpha-3 for HERE
+  (`CH`/`CHE` → `CHE`); `UK` is an alias for `GBR`. Case-insensitive,
+  whitespace-tolerant, duplicates removed.
+- Supported countries: CH, AT, DE, PL, CZ, SK, FR, IT, GB/UK, NL, BE, ES, PT,
+  SI, HR, HU, RO, BG, DK, SE, NO, FI (alpha-3 equivalents too). Anything else
+  → `400 Unsupported exclude country code: XX`.
+- Origin/destination inside an excluded country → `400` (`"Origin cannot be
+  in an excluded country."` / `"Destination cannot be in an excluded
+  country."`) **before** any HERE routing call.
+- If no route exists under the exclusions, the API returns structured
+  `422 NO_ROUTE_FOUND` JSON (strict exclusions can make routes impossible).
+
+In the UI, use the "Avoid countries" field (e.g. `CH, AT`; the "Avoid CH"
+button fills `CH` without submitting). The result card shows
+`Excluded countries: CHE` and the map shows the recalculated route. The
+normalized list sent to HERE is echoed in `debug.hereRequest.excludeCountries`.
+
 ### Truck restriction warnings
 
 When HERE reports that the calculated route violates a restriction for the
@@ -417,6 +467,9 @@ Notes:
 - Route geometry is computed by the backend from HERE routing; map rendering
   is client-side HERE Maps JS loading tiles directly from HERE's CDN.
 - The map is read-only for now — no draggable route editing.
+- Country exclusion is strict, limited to the supported European country list
+  above, and applies to routing only (no map overlay of excluded borders).
+  Transit micro-states (e.g. Liechtenstein) are not in the exclusion list.
 
 ## Vehicle Profiles
 

@@ -141,6 +141,22 @@ textarea {
   justify-content: flex-end;
 }
 
+.field-help {
+  font-size: 0.78rem;
+}
+
+.quick-avoid-btn {
+  padding: 1px 8px;
+  font-size: 0.75rem;
+  margin-left: 6px;
+}
+
+.excluded-countries {
+  margin: 10px 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
 .submit-btn {
   font: inherit;
   font-weight: 600;
