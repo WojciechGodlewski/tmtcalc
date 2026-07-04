@@ -30,6 +30,18 @@ export interface Tunnel {
   country: string | null;
 }
 
+/** Human-readable location near a restriction segment (reverse-geocoded) */
+export interface SegmentLocation {
+  label: string;
+  city?: string | null;
+  district?: string | null;
+  county?: string | null;
+  state?: string | null;
+  countryCode?: string | null;
+  street?: string | null;
+  source: 'here_reverse_geocode';
+}
+
 /** A concrete route segment where a vehicle restriction applies */
 export interface RestrictionSegment {
   code: string;
@@ -44,6 +56,10 @@ export interface RestrictionSegment {
   approxDistanceFromOriginKm: number | null;
   details: unknown[];
   restrictionSummary: string;
+  /** Midpoint used for the reverse-geocoded location */
+  midPoint?: { lat: number; lng: number } | null;
+  /** Nearby location label; null when lookup failed or was skipped */
+  location?: SegmentLocation | null;
 }
 
 export interface RouteFacts {

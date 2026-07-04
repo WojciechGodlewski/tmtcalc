@@ -28,6 +28,12 @@ export interface GeocodeOptions {
 export interface ReverseGeocodeResult {
   countryCode: string | null;
   label: string;
+  /** Normalized address components (best effort, null when HERE omits them) */
+  city?: string | null;
+  district?: string | null;
+  county?: string | null;
+  state?: string | null;
+  street?: string | null;
 }
 
 interface HereGeocodeResponse {
@@ -221,7 +227,12 @@ export function createGeocoder(client: HereClient) {
 
     const result: ReverseGeocodeResult = {
       countryCode: item.address.countryCode ?? null,
-      label: item.address.label,
+      label: item.address.label ?? '',
+      city: item.address.city ?? null,
+      district: item.address.district ?? null,
+      county: item.address.county ?? null,
+      state: item.address.state ?? null,
+      street: item.address.street ?? null,
     };
 
     // Cache the result

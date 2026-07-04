@@ -5,19 +5,36 @@ function formatCoord(p: { lat: number; lng: number } | null): string {
   return `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`;
 }
 
+/** Readable "near" text: HERE label, or composed from components, or null */
+function nearText(segment: RestrictionSegment): string | null {
+  const loc = segment.location;
+  if (!loc) return null;
+  if (loc.label) return loc.label;
+  const composed = [loc.city ?? loc.district ?? loc.county, loc.state, loc.countryCode]
+    .filter(Boolean)
+    .join(', ');
+  return composed || null;
+}
+
 function RestrictionSegmentItem({ segment }: { segment: RestrictionSegment }) {
+  const near = nearText(segment);
   return (
     <li className="restriction-segment">
       <div className="restriction-segment-head">
         <span className={`severity-badge severity-${segment.severity}`}>{segment.severity}</span>
         <strong>{segment.restrictionSummary}</strong>
       </div>
+      {near && (
+        <div className="restriction-near">
+          Near: <strong>{near}</strong>
+        </div>
+      )}
       <div className="restriction-segment-meta">
         {segment.approxDistanceFromOriginKm != null && (
           <span>Approx. {segment.approxDistanceFromOriginKm} km from origin</span>
         )}
         <span>
-          Segment: {formatCoord(segment.startPoint)} → {formatCoord(segment.endPoint)}
+          Start: {formatCoord(segment.startPoint)} · End: {formatCoord(segment.endPoint)}
         </span>
         <span className="muted">
           {segment.title} <span className="badge">{segment.code}</span>

@@ -54,6 +54,21 @@ export const InfrastructureSchema = z.object({
  * A concrete route segment where a vehicle restriction applies,
  * derived from HERE spans=notices (see src/here/restriction-segments.ts)
  */
+/**
+ * Human-readable location near a restriction segment, reverse-geocoded from
+ * the segment midpoint (best effort - never affects quote validity)
+ */
+export const SegmentLocationSchema = z.object({
+  label: z.string(),
+  city: z.string().nullable().optional(),
+  district: z.string().nullable().optional(),
+  county: z.string().nullable().optional(),
+  state: z.string().nullable().optional(),
+  countryCode: z.string().nullable().optional(),
+  street: z.string().nullable().optional(),
+  source: z.literal('here_reverse_geocode'),
+});
+
 export const RestrictionSegmentSchema = z.object({
   code: z.string(),
   severity: z.string(),
@@ -67,6 +82,10 @@ export const RestrictionSegmentSchema = z.object({
   approxDistanceFromOriginKm: z.number().nullable(),
   details: z.array(z.unknown()),
   restrictionSummary: z.string(),
+  /** Midpoint used for the reverse-geocoded location (when computable) */
+  midPoint: z.object({ lat: z.number(), lng: z.number() }).nullable().optional(),
+  /** Reverse-geocoded nearby location; null when lookup failed/skipped */
+  location: SegmentLocationSchema.nullable().optional(),
 });
 
 /**
@@ -116,6 +135,7 @@ export const RouteFactsSchema = z.object({
 });
 
 // Type exports inferred from schemas
+export type SegmentLocation = z.infer<typeof SegmentLocationSchema>;
 export type RestrictionSegment = z.infer<typeof RestrictionSegmentSchema>;
 export type Tunnel = z.infer<typeof TunnelSchema>;
 export type Warning = z.infer<typeof WarningSchema>;

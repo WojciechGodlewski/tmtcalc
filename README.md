@@ -200,6 +200,24 @@ If HERE provides no span data for a notice, the UI falls back to the generic
 restriction warning (`restrictionReasons`) — `truckRestricted` and the
 warning always work regardless.
 
+**Nearby location labels.** Each located restriction segment is additionally
+reverse-geocoded from its **midpoint** so dispatchers see a readable
+"Near: Brennero, Trentino-South Tyrol, Italy" instead of raw coordinates
+only. Notes:
+
+- "Near" labels are **approximate** (midpoint of the segment) — the exact
+  start/end coordinates remain visible on the card for operational
+  verification.
+- Lookup is **best-effort**: it never affects quote validity or
+  admissibility, and a failed/skipped lookup simply leaves `location: null`
+  (the UI silently shows coordinates only).
+- At most 5 segments per request are reverse-geocoded (the rest get
+  `location: null`); near-identical midpoints are deduplicated within a
+  request. Lookup stats are in
+  `debug.hereResponse.restrictionLocationLookups`.
+- Reverse geocoding runs on the **backend** using `HERE_API_KEY`; the
+  frontend never calls HERE geocoding.
+
 ### Route geometry API
 
 `POST /api/quote` accepts an optional `"includeGeometry": true` flag. The

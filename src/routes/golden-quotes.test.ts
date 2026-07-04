@@ -97,15 +97,59 @@ function buildRoutingResponse(sections: Array<Record<string, unknown>>) {
   return { routes: [{ id: 'golden-route-1', sections }] };
 }
 
+/** Reverse geocode fixture served for restriction segment midpoints */
+const REVGEO_FIXTURE = {
+  label: 'Brennero, Trentino-South Tyrol, Italy',
+  countryCode: 'ITA',
+  city: 'Brennero',
+  county: 'Bolzano',
+  state: 'Trentino-South Tyrol',
+  street: 'A22',
+};
+
+/** URLs of reverse geocode calls made since the last installFetchMock() */
+let revgeocodeUrls: string[] = [];
+/** When true, the mocked reverse geocode endpoint returns HTTP 500 */
+let revgeocodeFails = false;
+
 /**
  * Install a fetch mock that serves geocoding fixtures and the given routing
  * response. Records routing request URLs into the returned array.
  */
 function installFetchMock(routingResponse: unknown): string[] {
   const routingUrls: string[] = [];
+  revgeocodeUrls = [];
+  revgeocodeFails = false;
 
   mockFetch.mockImplementation(async (url: string) => {
     const parsed = new URL(url);
+
+    if (parsed.hostname.includes('revgeocode.search')) {
+      revgeocodeUrls.push(url);
+      if (revgeocodeFails) {
+        return {
+          ok: false,
+          status: 500,
+          statusText: 'Internal Server Error',
+          headers: { get: () => null },
+          text: async () => '{"title":"revgeo down"}',
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              title: REVGEO_FIXTURE.label,
+              id: 'revgeo-1',
+              resultType: 'street',
+              address: { ...REVGEO_FIXTURE },
+              position: { lat: 46.885, lng: 11.375 },
+            },
+          ],
+        }),
+      };
+    }
 
     if (parsed.hostname.includes('geocode.search')) {
       const q = parsed.searchParams.get('q') ?? '';
@@ -741,6 +785,22 @@ describe('Truck restriction segments (spans=notices)', () => {
     expect(body.admissibility.reason).toBe('Route found, but not valid for selected vehicle.');
     expect(body.quote.validForOperations).toBe(false);
 
+    // Reverse-geocoded "near" location attached from the segment midpoint
+    expect(seg.midPoint).toEqual({
+      lat: Math.round(((46.5 + 47.27) / 2) * 100000) / 100000,
+      lng: Math.round(((11.35 + 11.4) / 2) * 100000) / 100000,
+    });
+    expect(seg.location).not.toBeNull();
+    expect(seg.location.label).toBe('Brennero, Trentino-South Tyrol, Italy');
+    expect(seg.location.source).toBe('here_reverse_geocode');
+    expect(revgeocodeUrls).toHaveLength(1);
+    expect(body.debug.hereResponse.restrictionLocationLookups).toEqual({
+      attempted: 1,
+      succeeded: 1,
+      failed: 0,
+      skipped: 0,
+    });
+
     // Sanitized debug preview present
     expect(body.debug.hereResponse.restrictionSegmentsCount).toBe(1);
     expect(body.debug.hereResponse.restrictionSegmentsPreview).toHaveLength(1);
@@ -777,6 +837,31 @@ describe('Truck restriction segments (spans=notices)', () => {
     expect(body.admissibility.status).toBe('truck_restricted');
     expect(body.admissibility.quoteValid).toBe(false);
     expect(body.admissibility.messages.some((m: string) => m.includes('verify the whole route manually'))).toBe(true);
+  });
+
+  it('does not fail the quote when reverse geocoding of segment locations fails', async () => {
+    installFetchMock(buildRoutingResponse([restrictionSection(true)]));
+    revgeocodeFails = true;
+    const app = buildTestApp();
+    await app.ready();
+
+    const response = await app.inject({ method: 'POST', url: '/api/quote', payload });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+
+    // Segment still present, admissibility unchanged, only location missing
+    expect(body.admissibility.status).toBe('truck_restricted');
+    const seg = body.routeFacts.regulatory.restrictionSegments[0];
+    expect(seg.location).toBeNull();
+    expect(seg.startPoint).not.toBeNull();
+    expect(body.debug.hereResponse.restrictionLocationLookups).toEqual({
+      attempted: 1,
+      succeeded: 0,
+      failed: 1,
+      skipped: 0,
+    });
+    // No key material anywhere despite the upstream failure
+    expect(JSON.stringify(body)).not.toContain('test-api-key');
   });
 
   it('returns warning status for non-violated truck notices (quote stays valid)', async () => {

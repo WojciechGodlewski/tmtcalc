@@ -160,6 +160,64 @@ describe('Geocoder', () => {
     });
   });
 
+  describe('reverseGeocode normalization', () => {
+    it('normalizes address components (city/district/county/state/street)', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              title: 'Brennero',
+              id: 'here:1',
+              resultType: 'street',
+              address: {
+                label: 'Brennero, Trentino-South Tyrol, Italy',
+                countryCode: 'ITA',
+                city: 'Brennero',
+                county: 'Bolzano',
+                state: 'Trentino-South Tyrol',
+                street: 'A22',
+              },
+              position: { lat: 46.885, lng: 11.375 },
+            },
+          ],
+        }),
+      });
+
+      const result = await geocoder.reverseGeocode(46.885, 11.375);
+      expect(result.label).toBe('Brennero, Trentino-South Tyrol, Italy');
+      expect(result.countryCode).toBe('ITA');
+      expect(result.city).toBe('Brennero');
+      expect(result.county).toBe('Bolzano');
+      expect(result.state).toBe('Trentino-South Tyrol');
+      expect(result.street).toBe('A22');
+      expect(result.district).toBeNull();
+    });
+
+    it('returns nulls for missing components without crashing', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              title: 'Somewhere',
+              id: 'here:2',
+              resultType: 'locality',
+              address: { label: 'Somewhere' },
+              position: { lat: 1, lng: 2 },
+            },
+          ],
+        }),
+      });
+
+      const result = await geocoder.reverseGeocode(1, 2);
+      expect(result.label).toBe('Somewhere');
+      expect(result.countryCode).toBeNull();
+      expect(result.city).toBeNull();
+      expect(result.state).toBeNull();
+    });
+  });
+
   describe('cache management', () => {
     it('reports cache size correctly', async () => {
       mockFetch.mockResolvedValue({

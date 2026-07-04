@@ -13,6 +13,7 @@ import { applyResolvedGeography, toAlpha2 } from './geography.js';
 import { normalizeExcludeCountries, excludedAlpha2Set } from './exclude-countries.js';
 import { evaluateAdmissibility, type Admissibility } from './admissibility.js';
 import { buildRestrictionDebug, type RestrictionSegmentPreview } from './restriction-debug.js';
+import { enrichRestrictionSegmentsWithLocations, type RestrictionLocationLookupStats } from './segment-locations.js';
 import { buildRouteGeometry, type RouteGeometry } from './route-geometry.js';
 
 /**
@@ -181,6 +182,8 @@ interface HereResponseDebug {
   restrictionSegmentsCount: number;
   /** Compact sanitized preview of restriction segments (max 5) */
   restrictionSegmentsPreview: RestrictionSegmentPreview[];
+  /** Reverse geocode lookup stats for restriction segment locations */
+  restrictionLocationLookups: RestrictionLocationLookupStats;
 }
 
 interface AlpsConfig {
@@ -340,6 +343,13 @@ export function createQuoteHandler(hereService: HereService) {
         resolvedDestination.countryCode
       );
 
+      // Best-effort readable locations for restriction segments (capped,
+      // deduped, never fails the request - see segment-locations.ts)
+      const restrictionLocationLookups = await enrichRestrictionSegmentsWithLocations(
+        hereService.reverseGeocode,
+        routeFacts.regulatory.restrictionSegments ?? []
+      );
+
       // Calculate quote
       const quoteOptions: QuoteOptions = {
         pricingDateTime: body.pricingDateTime,
@@ -428,6 +438,7 @@ export function createQuoteHandler(hereService: HereService) {
             firstPointOriginDistanceKmBefore: routeResult.debug.firstPointOriginDistanceKmBefore,
             firstPointOriginDistanceKmAfter: routeResult.debug.firstPointOriginDistanceKmAfter,
             ...buildRestrictionDebug(routeFacts.regulatory.restrictionSegments),
+            restrictionLocationLookups,
           },
           alpsConfig: routeResult.debug.alpsConfig,
           alpsCenterDistances: routeResult.debug.alpsCenterDistances,

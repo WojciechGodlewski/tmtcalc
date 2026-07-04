@@ -233,6 +233,11 @@ textarea {
   gap: 8px;
 }
 
+.restriction-near {
+  margin-top: 4px;
+  font-size: 0.92rem;
+}
+
 .restriction-segment-meta {
   display: flex;
   flex-wrap: wrap;
