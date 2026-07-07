@@ -380,6 +380,9 @@ describe('POST /api/quote', () => {
       expect(body.admissibility.routeUsable).toBe(true);
       expect(body.admissibility.hardConstraintViolation).toBe(false);
       expect(body.admissibility.failedConstraints).toEqual(['pricing_model']);
+      expect(body.admissibility.messages[0]).toBe(
+        'No pricing model covers the lane ES → PT for vehicle solo_18t_23ep.'
+      );
       expect(body.quote).toBeUndefined();
       // Route facts still available (alpha-2 countries)
       expect(body.routeFacts.geography.originCountry).toBe('ES');

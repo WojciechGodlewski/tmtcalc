@@ -65,9 +65,19 @@ export function AdmissibilityBanner({ admissibility, excludedCountries }: Admiss
     return (
       <div className="card status-banner status-info" role="status">
         <strong>Route is valid, but no pricing model is available for this lane.</strong>
-        <span className="status-detail">
-          The route satisfies all hard constraints; only pricing coverage is missing.
-        </span>
+        {/* Backend messages name the exact lane, e.g. "No pricing model
+            covers the lane DE → FR for vehicle solo_18t_23ep." */}
+        {admissibility && admissibility.messages.length > 0 ? (
+          <ul className="status-messages">
+            {admissibility.messages.map((m) => (
+              <li key={m}>{m}</li>
+            ))}
+          </ul>
+        ) : (
+          <span className="status-detail">
+            The route satisfies all hard constraints; only pricing coverage is missing.
+          </span>
+        )}
       </div>
     );
   }

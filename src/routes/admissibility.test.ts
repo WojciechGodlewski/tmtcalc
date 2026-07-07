@@ -116,17 +116,20 @@ describe('evaluateAdmissibility', () => {
     expect(a.messages[0]).toContain('Manual verification required');
   });
 
-  it('pricing_unavailable: clean route without a pricing model', () => {
+  it('pricing_unavailable: clean route without a pricing model, lane named in messages', () => {
     const a = evaluateAdmissibility({
       routeFacts: makeFacts({}),
       excludeCountries: [],
       pricingModelFound: false,
+      vehicleProfileId: 'solo_18t_23ep',
     });
     expect(a.status).toBe('pricing_unavailable');
     expect(a.quoteValid).toBe(false);
     expect(a.routeUsable).toBe(true);
     expect(a.hardConstraintViolation).toBe(false);
     expect(a.failedConstraints).toEqual(['pricing_model']);
+    // The exact lane and vehicle are named so operators see WHY
+    expect(a.messages[0]).toBe('No pricing model covers the lane IT → DE for vehicle solo_18t_23ep.');
   });
 
   it('truck_restricted wins over missing pricing model', () => {

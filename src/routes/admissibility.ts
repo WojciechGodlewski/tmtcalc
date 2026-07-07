@@ -82,6 +82,8 @@ export interface AdmissibilityInput {
   excludeCountries: string[];
   /** Whether a pricing model was found for the lane/vehicle */
   pricingModelFound: boolean;
+  /** Selected vehicle profile, for lane messages */
+  vehicleProfileId?: string;
 }
 
 /**
@@ -90,7 +92,7 @@ export interface AdmissibilityInput {
  * structured errors and never reach this function.)
  */
 export function evaluateAdmissibility(input: AdmissibilityInput): Admissibility {
-  const { routeFacts, excludeCountries, pricingModelFound } = input;
+  const { routeFacts, excludeCountries, pricingModelFound, vehicleProfileId } = input;
   const regulatory = routeFacts.regulatory;
   const segments = regulatory.restrictionSegments ?? [];
 
@@ -149,13 +151,20 @@ export function evaluateAdmissibility(input: AdmissibilityInput): Admissibility 
   }
 
   if (!pricingModelFound) {
+    // Name the exact lane so operators immediately see WHY there is no
+    // price (market models cover specific origin lanes per vehicle).
+    const origin = routeFacts.geography.originCountry ?? 'unknown';
+    const destination = routeFacts.geography.destinationCountry ?? 'unknown';
     return {
       status: 'pricing_unavailable',
       quoteValid: false,
       routeUsable: true,
       hardConstraintViolation: false,
       reason: 'Route is valid, but no pricing model is available for this lane.',
-      messages: ['The route satisfies all hard constraints; only pricing coverage is missing.'],
+      messages: [
+        `No pricing model covers the lane ${origin} → ${destination}${vehicleProfileId ? ` for vehicle ${vehicleProfileId}` : ''}.`,
+        'The route satisfies all hard constraints; only pricing coverage is missing.',
+      ],
       failedConstraints: ['pricing_model'],
     };
   }

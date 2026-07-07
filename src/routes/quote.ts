@@ -380,6 +380,7 @@ export function createQuoteHandler(hereService: HereService) {
         routeFacts,
         excludeCountries,
         pricingModelFound,
+        vehicleProfileId: body.vehicleProfileId,
       });
 
       const quote = pricingResult
