@@ -81,6 +81,22 @@ Without the key the app still works fully — the map area just shows
 Map tiles are loaded by the browser directly from HERE's CDN
 (`js.api.here.com`); they are never proxied through our backend.
 
+**Click-to-plan routes.** With the map key configured, the map is visible
+before any quote and clicking it builds the route: the **first click is the
+origin, the last click is the destination**, and every click in between is a
+via waypoint (the latest click always becomes the new destination). The form
+shows the clicked points as a list with A/1/2/B role badges, per-point
+remove, "Undo last" and "Clear points"; while map points are set, the
+address fields are disabled and ignored. Up to 10 points are supported and
+at least 2 are required. Clicked points are sent to the backend as
+coordinates — the backend reverse-geocodes them for country detection, so
+pricing lanes, country exclusions (including the excluded-origin/destination
+checks), restrictions, and admissibility work exactly as with typed
+addresses; after the quote, the point list shows the resolved place labels.
+Applying a preset clears map points and returns to address mode. Without a
+map key, click-to-plan is unavailable and typed addresses remain the primary
+path.
+
 **Verifying the map:** run the backend (`npm run dev`, with `HERE_API_KEY`)
 and the frontend (`npm run web:dev`, with `web/.env` set), then click each of
 the four presets and Calculate. Expect: the route drawn on the map, A/B

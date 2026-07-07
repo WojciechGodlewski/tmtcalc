@@ -210,10 +210,13 @@ export interface ApiErrorBody {
 
 export type VehicleProfileId = 'solo_18t_23ep' | 'van_8ep' | 'ftl_13_6_33ep';
 
+/** A location by address (typed) or by coordinates (clicked on the map) */
+export type LocationInput = { address: string } | { lat: number; lng: number };
+
 export interface QuoteRequest {
-  origin: { address: string };
-  destination: { address: string };
-  via?: Array<{ address: string }>;
+  origin: LocationInput;
+  destination: LocationInput;
+  via?: LocationInput[];
   vehicleProfileId: VehicleProfileId;
   /** Ask the backend for decoded route geometry (map display) */
   includeGeometry?: boolean;
