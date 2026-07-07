@@ -58,7 +58,10 @@ interface QuoteFormProps {
   onSubmit: () => void;
   onRemovePoint: (index: number) => void;
   onUndoPoint: () => void;
+  /** "Clear points" button: full planning restart (also dismisses the result) */
   onClearPoints: () => void;
+  /** Preset applied: leave map mode but keep any displayed result */
+  onPresetApplied: () => void;
 }
 
 export function QuoteForm({
@@ -71,6 +74,7 @@ export function QuoteForm({
   onRemovePoint,
   onUndoPoint,
   onClearPoints,
+  onPresetApplied,
 }: QuoteFormProps) {
   const set = (patch: Partial<FormState>) => onChange({ ...form, ...patch });
   // Map points take precedence over typed addresses while present
@@ -92,9 +96,10 @@ export function QuoteForm({
             type="button"
             className="preset-btn"
             onClick={() => {
-              // Presets are address-based: applying one leaves map-planning mode
+              // Presets are address-based: applying one leaves map-planning
+              // mode (without dismissing a displayed result)
               onChange(preset.state);
-              onClearPoints();
+              onPresetApplied();
             }}
           >
             {preset.label}

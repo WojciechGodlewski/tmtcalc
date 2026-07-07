@@ -165,7 +165,16 @@ export function App() {
         onSubmit={handleSubmit}
         onRemovePoint={(i) => setPlanningPoints((p) => removePoint(p, i))}
         onUndoPoint={() => setPlanningPoints((p) => undoLastPoint(p))}
-        onClearPoints={() => setPlanningPoints(clearPoints())}
+        onClearPoints={() => {
+          // "Clear points" is a full restart of map planning: it also
+          // dismisses the displayed result so the map returns to a clean
+          // planning canvas.
+          setPlanningPoints(clearPoints());
+          setResult(null);
+          setError(null);
+          setValidationMessage(null);
+        }}
+        onPresetApplied={() => setPlanningPoints(clearPoints())}
       />
 
       {validationMessage && (
