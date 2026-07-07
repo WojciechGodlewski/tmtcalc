@@ -177,6 +177,37 @@ textarea {
   cursor: default;
 }
 
+.submit-row {
+  display: flex;
+  gap: 8px;
+}
+
+.submit-row .submit-btn {
+  flex: 1;
+}
+
+.clear-quote-btn {
+  font: inherit;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.clear-quote-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.clear-quote-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* --- States --- */
 
 .loading-card {

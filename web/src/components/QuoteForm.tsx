@@ -60,6 +60,10 @@ interface QuoteFormProps {
   onUndoPoint: () => void;
   /** "Clear points" button: full planning restart (also dismisses the result) */
   onClearPoints: () => void;
+  /** "Clear quote" button: dismiss the result and reset the map */
+  onClearQuote: () => void;
+  /** Whether there is anything to clear (result, error, or map points) */
+  canClearQuote: boolean;
   /** Preset applied: leave map mode but keep any displayed result */
   onPresetApplied: () => void;
 }
@@ -74,6 +78,8 @@ export function QuoteForm({
   onRemovePoint,
   onUndoPoint,
   onClearPoints,
+  onClearQuote,
+  canClearQuote,
   onPresetApplied,
 }: QuoteFormProps) {
   const set = (patch: Partial<FormState>) => onChange({ ...form, ...patch });
@@ -243,9 +249,19 @@ export function QuoteForm({
         </label>
 
         <div className="field submit-field">
-          <button type="submit" className="submit-btn" disabled={loading}>
-            {loading ? 'Calculating…' : 'Calculate quote'}
-          </button>
+          <div className="submit-row">
+            <button type="submit" className="submit-btn" disabled={loading}>
+              {loading ? 'Calculating…' : 'Calculate quote'}
+            </button>
+            <button
+              type="button"
+              className="clear-quote-btn"
+              disabled={loading || !canClearQuote}
+              onClick={onClearQuote}
+            >
+              Clear quote
+            </button>
+          </div>
         </div>
       </div>
     </form>

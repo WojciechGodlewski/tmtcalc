@@ -137,6 +137,16 @@ export function App() {
     }
   }
 
+  // Full reset of the current quote: dismisses the result/error and clears
+  // the map (planning points and drawn route) while keeping form field
+  // values. Used by both "Clear quote" and "Clear points".
+  function handleClearQuote() {
+    setPlanningPoints(clearPoints());
+    setResult(null);
+    setError(null);
+    setValidationMessage(null);
+  }
+
   // Labels for planning points, available after a quote from resolvedPoints
   // (origin, vias, destination in order)
   const pointLabels: Array<string | null> = (() => {
@@ -165,15 +175,9 @@ export function App() {
         onSubmit={handleSubmit}
         onRemovePoint={(i) => setPlanningPoints((p) => removePoint(p, i))}
         onUndoPoint={() => setPlanningPoints((p) => undoLastPoint(p))}
-        onClearPoints={() => {
-          // "Clear points" is a full restart of map planning: it also
-          // dismisses the displayed result so the map returns to a clean
-          // planning canvas.
-          setPlanningPoints(clearPoints());
-          setResult(null);
-          setError(null);
-          setValidationMessage(null);
-        }}
+        onClearPoints={handleClearQuote}
+        onClearQuote={handleClearQuote}
+        canClearQuote={result !== null || error !== null || planningPoints.length > 0}
         onPresetApplied={() => setPlanningPoints(clearPoints())}
       />
 
