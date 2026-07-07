@@ -495,55 +495,54 @@ textarea {
   color: var(--muted);
 }
 
-/* --- Click-to-plan route points --- */
+/* --- Unified route stop list --- */
 
-.map-points {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px 14px;
+.stops-section {
   margin-bottom: 14px;
-  background: var(--highlight-bg);
 }
 
-.map-points-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.map-points-actions {
-  display: flex;
-  gap: 6px;
-}
-
-.map-points-list {
+.stops-list {
   list-style: none;
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
-.map-point-row {
+.stop-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.9rem;
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 4px 8px;
 }
 
-.map-point-text {
+.stop-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.stop-point-chip {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 0.92rem;
+  background: var(--highlight-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.stops-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.stops-note {
+  font-size: 0.8rem;
 }
 
 .point-badge {
@@ -569,6 +568,11 @@ textarea {
 
 .point-badge-via {
   background: var(--accent);
+}
+
+.point-badge-empty {
+  background: var(--border);
+  color: var(--muted);
 }
 
 .point-remove-btn {

@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { loadHereMaps } from '../here-maps-loader';
 import type { ResolvedPoints, RestrictionSegment, RouteGeometry } from '../types';
-import type { RoutePoint } from '../route-points';
-import { pointRole } from '../route-points';
+import type { PlanningMarker } from '../route-stops';
 
 /**
  * Browser-side HERE Maps key (separate, restricted key - NOT the backend
@@ -23,10 +22,10 @@ interface RouteMapProps {
   geometry: RouteGeometry | undefined;
   resolvedPoints: ResolvedPoints | undefined;
   restrictionSegments?: RestrictionSegment[];
-  /** Click-to-plan points (first = origin, last = destination) */
-  planningPoints: RoutePoint[];
+  /** Clicked map stops with pre-computed roles (A/1/2/B) */
+  planningMarkers: PlanningMarker[];
   /** Called with the tapped coordinate; absence disables click capture */
-  onMapClick?: (point: RoutePoint) => void;
+  onMapClick?: (point: { lat: number; lng: number }) => void;
   /** True when a quote result is being displayed */
   hasResult: boolean;
 }
@@ -85,7 +84,7 @@ export function RouteMap({
   geometry,
   resolvedPoints,
   restrictionSegments,
-  planningPoints,
+  planningMarkers,
   onMapClick,
   hasResult,
 }: RouteMapProps) {
@@ -235,12 +234,11 @@ export function RouteMap({
     if (geometry) return;
 
     const H = window.H;
-    planningPoints.forEach((point, i) => {
-      const role = pointRole(planningPoints, i);
-      const icon = new H.map.Icon(markerSvg(roleFill(role), role), { anchor: { x: 13, y: 34 } });
-      group.addObject(new H.map.Marker({ lat: point.lat, lng: point.lng }, { icon }));
-    });
-  }, [mapReady, planningPoints, geometry]);
+    for (const marker of planningMarkers) {
+      const icon = new H.map.Icon(markerSvg(roleFill(marker.role), marker.role), { anchor: { x: 13, y: 34 } });
+      group.addObject(new H.map.Marker({ lat: marker.lat, lng: marker.lng }, { icon }));
+    }
+  }, [mapReady, planningMarkers, geometry]);
 
   // --- Render states ---
 
@@ -256,7 +254,7 @@ export function RouteMap({
   }
 
   if (loadFailed) {
-    if (!hasResult && planningPoints.length === 0) return null;
+    if (!hasResult && planningMarkers.length === 0) return null;
     return (
       <div className="card map-note">
         Map failed to load from HERE. Quote calculation still works.
@@ -272,8 +270,8 @@ export function RouteMap({
       )}
       <div ref={containerRef} className="route-map" />
       <p className="map-hint muted">
-        Click the map to add route points — the first click is the origin, the last click is the
-        destination.
+        Click the map to add a route stop — it fills the first empty stop row, otherwise the click
+        becomes the new destination.
       </p>
       {geometry?.simplified && (
         <p className="muted map-footnote">

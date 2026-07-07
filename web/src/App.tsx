@@ -2,15 +2,16 @@ import { useEffect, useState } from 'react';
 import { requestQuote } from './api';
 import type { QuoteRequest, QuoteResponse } from './types';
 import {
-  addPoint,
-  canAddPoint,
-  clearPoints,
+  addPointStop,
+  canAcceptPoint,
+  clearPointStops,
   derivePayloadLocations,
-  removePoint,
-  undoLastPoint,
-  MAX_ROUTE_POINTS,
-  type RoutePoint,
-} from './route-points';
+  emptyStops,
+  filledStops,
+  isEmptyStop,
+  planningMarkers,
+  MAX_STOPS,
+} from './route-stops';
 import { QuoteForm, type FormState } from './components/QuoteForm';
 import { AdmissibilityBanner } from './components/AdmissibilityBanner';
 import { QuoteResult } from './components/QuoteResult';
@@ -20,30 +21,27 @@ import { DebugPanel } from './components/DebugPanel';
 import { ErrorMessage } from './components/ErrorMessage';
 
 const INITIAL_FORM: FormState = {
-  origin: '',
-  destination: '',
-  viaText: '',
+  stops: emptyStops(),
   excludeCountriesText: '',
   vehicleProfileId: 'solo_18t_23ep',
 };
 
 export function App() {
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
-  const [planningPoints, setPlanningPoints] = useState<RoutePoint[]>([]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<QuoteResponse | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
 
-  function handleMapClick(point: RoutePoint) {
+  function handleMapClick(point: { lat: number; lng: number }) {
     if (loading) return;
-    setPlanningPoints((points) => {
-      if (!canAddPoint(points)) {
-        setValidationMessage(`At most ${MAX_ROUTE_POINTS} route points are supported.`);
-        return points;
+    setForm((current) => {
+      if (!canAcceptPoint(current.stops)) {
+        setValidationMessage(`At most ${MAX_STOPS} route stops are supported.`);
+        return current;
       }
       setValidationMessage(null);
-      return addPoint(points, point);
+      return { ...current, stops: addPointStop(current.stops, point) };
     });
     // A new click starts re-planning: drop the previous result so the
     // planning markers become visible again.
@@ -52,77 +50,45 @@ export function App() {
   }
 
   // Internal hook so headless checks (and the browser console) can add
-  // planning points without a live HERE map:
+  // stops without a live HERE map:
   // window.dispatchEvent(new CustomEvent('tmtcalc-add-point', { detail: { lat, lng } }))
   useEffect(() => {
     const listener = (event: Event) => {
-      const detail = (event as CustomEvent<RoutePoint>).detail;
+      const detail = (event as CustomEvent<{ lat: number; lng: number }>).detail;
       if (detail && typeof detail.lat === 'number' && typeof detail.lng === 'number') {
         handleMapClick(detail);
       }
     };
     window.addEventListener('tmtcalc-add-point', listener);
     return () => window.removeEventListener('tmtcalc-add-point', listener);
-    // handleMapClick only uses setters + loading; loading staleness is
-    // avoided by re-registering when it changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading]);
 
   async function handleSubmit() {
-    const usingMapPoints = planningPoints.length > 0;
+    // ONE submit path: the stop list is the single source of truth, whether
+    // stops were typed or clicked. Country exclusions apply identically.
+    const locations = derivePayloadLocations(form.stops);
+    if (!locations) {
+      setValidationMessage('Enter or click at least two stops (origin and destination).');
+      setResult(null);
+      setError(null);
+      return;
+    }
+    setValidationMessage(null);
 
-    // Common option fields
     const excludeCountries = form.excludeCountriesText
       .split(',')
       .map((code) => code.trim().toUpperCase())
       .filter((code) => code.length > 0);
 
-    let payload: QuoteRequest;
-
-    if (usingMapPoints) {
-      const locations = derivePayloadLocations(planningPoints);
-      if (!locations) {
-        setValidationMessage('Add at least two points on the map (origin and destination).');
-        setResult(null);
-        setError(null);
-        return;
-      }
-      setValidationMessage(null);
-      payload = {
-        origin: locations.origin,
-        destination: locations.destination,
-        ...(locations.via.length > 0 ? { via: locations.via } : {}),
-        vehicleProfileId: form.vehicleProfileId,
-        includeGeometry: true,
-        ...(excludeCountries.length > 0 ? { excludeCountries } : {}),
-      };
-    } else {
-      const origin = form.origin.trim();
-      const destination = form.destination.trim();
-
-      if (!origin || !destination) {
-        setValidationMessage('Please enter both an origin and a destination address.');
-        setResult(null);
-        setError(null);
-        return;
-      }
-      setValidationMessage(null);
-
-      const via = form.viaText
-        .split('\n')
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0)
-        .map((address) => ({ address }));
-
-      payload = {
-        origin: { address: origin },
-        destination: { address: destination },
-        ...(via.length > 0 ? { via } : {}),
-        vehicleProfileId: form.vehicleProfileId,
-        includeGeometry: true,
-        ...(excludeCountries.length > 0 ? { excludeCountries } : {}),
-      };
-    }
+    const payload: QuoteRequest = {
+      origin: locations.origin,
+      destination: locations.destination,
+      ...(locations.via.length > 0 ? { via: locations.via } : {}),
+      vehicleProfileId: form.vehicleProfileId,
+      includeGeometry: true,
+      ...(excludeCountries.length > 0 ? { excludeCountries } : {}),
+    };
 
     setLoading(true);
     setError(null);
@@ -138,25 +104,37 @@ export function App() {
   }
 
   // Full reset of the current quote: dismisses the result/error and clears
-  // the map (planning points and drawn route) while keeping form field
-  // values. Used by both "Clear quote" and "Clear points".
+  // the map (clicked points and drawn route) while keeping typed addresses.
   function handleClearQuote() {
-    setPlanningPoints(clearPoints());
+    setForm((current) => ({ ...current, stops: clearPointStops(current.stops) }));
     setResult(null);
     setError(null);
     setValidationMessage(null);
   }
 
-  // Labels for planning points, available after a quote from resolvedPoints
-  // (origin, vias, destination in order)
-  const pointLabels: Array<string | null> = (() => {
+  const hasPointStops = form.stops.some((s) => s.kind === 'point');
+
+  // Labels for stop rows, available after a quote from resolvedPoints
+  // (origin, vias, destination in filled order)
+  const stopLabels: Array<string | null> = (() => {
     const rp = result?.debug?.resolvedPoints;
-    if (!rp || planningPoints.length < 2) return planningPoints.map(() => null);
-    return [
+    const labels = form.stops.map(() => null as string | null);
+    if (!rp) return labels;
+    const resolvedInOrder = [
       rp.origin?.label ?? null,
       ...(rp.waypoints ?? []).map((wp) => wp.label ?? null),
       rp.destination?.label ?? null,
-    ].slice(0, planningPoints.length);
+    ];
+    const filled = filledStops(form.stops);
+    if (filled.length !== resolvedInOrder.length) return labels;
+    let filledIdx = 0;
+    form.stops.forEach((stop, i) => {
+      if (!isEmptyStop(stop)) {
+        labels[i] = resolvedInOrder[filledIdx];
+        filledIdx++;
+      }
+    });
+    return labels;
   })();
 
   return (
@@ -169,16 +147,11 @@ export function App() {
       <QuoteForm
         form={form}
         loading={loading}
-        planningPoints={planningPoints}
-        pointLabels={pointLabels}
+        stopLabels={stopLabels}
         onChange={setForm}
         onSubmit={handleSubmit}
-        onRemovePoint={(i) => setPlanningPoints((p) => removePoint(p, i))}
-        onUndoPoint={() => setPlanningPoints((p) => undoLastPoint(p))}
-        onClearPoints={handleClearQuote}
         onClearQuote={handleClearQuote}
-        canClearQuote={result !== null || error !== null || planningPoints.length > 0}
-        onPresetApplied={() => setPlanningPoints(clearPoints())}
+        canClearQuote={result !== null || error !== null || hasPointStops}
       />
 
       {validationMessage && (
@@ -211,7 +184,7 @@ export function App() {
         restrictionSegments={
           !loading && result ? result.routeFacts.regulatory.restrictionSegments : undefined
         }
-        planningPoints={planningPoints}
+        planningMarkers={planningMarkers(form.stops)}
         onMapClick={handleMapClick}
         hasResult={!loading && result !== null}
       />

@@ -81,20 +81,21 @@ Without the key the app still works fully — the map area just shows
 Map tiles are loaded by the browser directly from HERE's CDN
 (`js.api.here.com`); they are never proxied through our backend.
 
-**Click-to-plan routes.** With the map key configured, the map is visible
-before any quote and clicking it builds the route: the **first click is the
-origin, the last click is the destination**, and every click in between is a
-via waypoint (the latest click always becomes the new destination). The form
-shows the clicked points as a list with A/1/2/B role badges, per-point
-remove, "Undo last" and "Clear points"; while map points are set, the
-address fields are disabled and ignored. Up to 10 points are supported and
-at least 2 are required. Clicked points are sent to the backend as
-coordinates — the backend reverse-geocodes them for country detection, so
-pricing lanes, country exclusions (including the excluded-origin/destination
-checks), restrictions, and admissibility work exactly as with typed
-addresses; after the quote, the point list shows the resolved place labels.
-Applying a preset clears map points and returns to address mode. Without a
-map key, click-to-plan is unavailable and typed addresses remain the primary
+**Unified route stops (type or click).** The route is a single ordered stop
+list: the **first stop is the origin (A), the last stop is the destination
+(B)**, everything between is a via waypoint. Each stop is either a typed
+address or a clicked map point — **mixing is supported** (e.g. type the
+origin, click the destination). With the map key configured, clicking the
+map fills the first empty stop row; when no empty row exists the click is
+appended, so the latest click becomes the new destination. Rows show A/1/2/B
+role badges with per-row remove and an "+ Add stop" button; up to 10 stops,
+at least 2 required. Clicked stops are sent as coordinates and typed stops
+as addresses — the backend geocodes/reverse-geocodes each one, so pricing
+lanes, country exclusions (including the excluded-origin/destination
+checks), restrictions, and admissibility work identically for both input
+kinds. After a quote, clicked rows show their resolved place labels.
+"Clear quote" dismisses the result and removes clicked points while keeping
+typed addresses. Without a map key, typing addresses remains the primary
 path.
 
 **Verifying the map:** run the backend (`npm run dev`, with `HERE_API_KEY`)

@@ -1,10 +1,18 @@
 import type { VehicleProfileId } from '../types';
-import { pointRole, type RoutePoint } from '../route-points';
+import {
+  addEmptyStop,
+  addressStops,
+  removeStop,
+  stopRole,
+  updateAddressStop,
+  isEmptyStop,
+  MAX_STOPS,
+  type Stop,
+} from '../route-stops';
 
 export interface FormState {
-  origin: string;
-  destination: string;
-  viaText: string;
+  /** Unified route stops: typed addresses and clicked map points, in order */
+  stops: Stop[];
   /** Comma-separated country codes to exclude, e.g. "CH, AT" */
   excludeCountriesText: string;
   vehicleProfileId: VehicleProfileId;
@@ -19,22 +27,32 @@ interface Preset {
 const PRESETS: Preset[] = [
   {
     label: 'Poznań → Verona',
-    state: { origin: 'Poznań, Poland', destination: 'Verona, Italy', viaText: '', excludeCountriesText: '', vehicleProfileId: 'solo_18t_23ep' },
+    state: {
+      stops: addressStops(['Poznań, Poland', 'Verona, Italy']),
+      excludeCountriesText: '',
+      vehicleProfileId: 'solo_18t_23ep',
+    },
   },
   {
     label: 'Verona → Munich',
-    state: { origin: 'Verona, Italy', destination: 'Munich, Germany', viaText: '', excludeCountriesText: '', vehicleProfileId: 'solo_18t_23ep' },
+    state: {
+      stops: addressStops(['Verona, Italy', 'Munich, Germany']),
+      excludeCountriesText: '',
+      vehicleProfileId: 'solo_18t_23ep',
+    },
   },
   {
     label: 'Verona → London',
-    state: { origin: 'Verona, Italy', destination: 'London, United Kingdom', viaText: '', excludeCountriesText: '', vehicleProfileId: 'solo_18t_23ep' },
+    state: {
+      stops: addressStops(['Verona, Italy', 'London, United Kingdom']),
+      excludeCountriesText: '',
+      vehicleProfileId: 'solo_18t_23ep',
+    },
   },
   {
     label: 'Turin → Chambéry (Fréjus)',
     state: {
-      origin: 'Turin, Italy',
-      destination: 'Chambéry, France',
-      viaText: 'Bardonecchia, Italy\nModane, France',
+      stops: addressStops(['Turin, Italy', 'Bardonecchia, Italy', 'Modane, France', 'Chambéry, France']),
       excludeCountriesText: '',
       vehicleProfileId: 'solo_18t_23ep',
     },
@@ -50,41 +68,27 @@ const VEHICLE_PROFILES: Array<{ id: VehicleProfileId; label: string }> = [
 interface QuoteFormProps {
   form: FormState;
   loading: boolean;
-  /** Click-to-plan points from the map; when non-empty they replace addresses */
-  planningPoints: RoutePoint[];
-  /** Resolved labels per point (after a quote), aligned with planningPoints */
-  pointLabels: Array<string | null>;
+  /** Resolved labels per stop row (after a quote); null when unknown */
+  stopLabels: Array<string | null>;
   onChange: (form: FormState) => void;
   onSubmit: () => void;
-  onRemovePoint: (index: number) => void;
-  onUndoPoint: () => void;
-  /** "Clear points" button: full planning restart (also dismisses the result) */
-  onClearPoints: () => void;
-  /** "Clear quote" button: dismiss the result and reset the map */
+  /** "Clear quote" button: dismiss the result and drop clicked map points */
   onClearQuote: () => void;
-  /** Whether there is anything to clear (result, error, or map points) */
+  /** Whether there is anything to clear (result, error, or clicked points) */
   canClearQuote: boolean;
-  /** Preset applied: leave map mode but keep any displayed result */
-  onPresetApplied: () => void;
 }
 
 export function QuoteForm({
   form,
   loading,
-  planningPoints,
-  pointLabels,
+  stopLabels,
   onChange,
   onSubmit,
-  onRemovePoint,
-  onUndoPoint,
-  onClearPoints,
   onClearQuote,
   canClearQuote,
-  onPresetApplied,
 }: QuoteFormProps) {
   const set = (patch: Partial<FormState>) => onChange({ ...form, ...patch });
-  // Map points take precedence over typed addresses while present
-  const usingMapPoints = planningPoints.length > 0;
+  const setStops = (stops: Stop[]) => set({ stops });
 
   return (
     <form
@@ -101,105 +105,72 @@ export function QuoteForm({
             key={preset.label}
             type="button"
             className="preset-btn"
-            onClick={() => {
-              // Presets are address-based: applying one leaves map-planning
-              // mode (without dismissing a displayed result)
-              onChange(preset.state);
-              onPresetApplied();
-            }}
+            onClick={() => onChange(preset.state)}
           >
             {preset.label}
           </button>
         ))}
       </div>
 
-      {usingMapPoints && (
-        <div className="map-points" data-testid="map-points">
-          <div className="map-points-head">
-            <span className="field-label">
-              Route points from map <span className="muted">({planningPoints.length})</span>
-            </span>
-            <span className="map-points-actions">
-              <button type="button" className="preset-btn" onClick={onUndoPoint}>
-                Undo last
-              </button>
-              <button type="button" className="preset-btn" onClick={onClearPoints}>
-                Clear points
-              </button>
-            </span>
-          </div>
-          <ol className="map-points-list">
-            {planningPoints.map((point, i) => {
-              const role = pointRole(planningPoints, i);
-              return (
-                <li key={`${point.lat},${point.lng},${i}`} className="map-point-row">
-                  <span className={`point-badge point-badge-${role === 'A' ? 'a' : role === 'B' ? 'b' : 'via'}`}>
-                    {role}
-                  </span>
-                  <span className="map-point-text">
-                    {pointLabels[i] ? (
+      <div className="stops-section">
+        <span className="field-label">
+          Route stops <span className="muted">(first is the origin, last is the destination)</span>
+        </span>
+        <ol className="stops-list">
+          {form.stops.map((stop, i) => {
+            const role = stopRole(form.stops, i);
+            const badgeClass =
+              role === 'A' ? 'a' : role === 'B' ? 'b' : role === '·' ? 'empty' : 'via';
+            return (
+              <li key={i} className="stop-row" data-testid="stop-row">
+                <span className={`point-badge point-badge-${badgeClass}`}>{role}</span>
+                {stop.kind === 'address' ? (
+                  <input
+                    type="text"
+                    className="stop-input"
+                    value={stop.address}
+                    placeholder="Type an address or click the map"
+                    onChange={(e) => setStops(updateAddressStop(form.stops, i, e.target.value))}
+                  />
+                ) : (
+                  <span className="stop-point-chip" data-testid="stop-point">
+                    {stopLabels[i] ? (
                       <>
-                        {pointLabels[i]} <span className="muted">({point.lat}, {point.lng})</span>
+                        {stopLabels[i]} <span className="muted">({stop.lat}, {stop.lng})</span>
                       </>
                     ) : (
-                      <>{point.lat}, {point.lng}</>
+                      <>Map point ({stop.lat}, {stop.lng})</>
                     )}
                   </span>
-                  <button
-                    type="button"
-                    className="point-remove-btn"
-                    aria-label={`Remove point ${role}`}
-                    onClick={() => onRemovePoint(i)}
-                  >
-                    ×
-                  </button>
-                </li>
-              );
-            })}
-          </ol>
-          <p className="muted map-points-note">
-            First point is the origin, last is the destination. Address fields are ignored while
-            map points are set.
-          </p>
+                )}
+                <button
+                  type="button"
+                  className="point-remove-btn"
+                  aria-label={`Remove stop ${i + 1}`}
+                  onClick={() => setStops(removeStop(form.stops, i))}
+                >
+                  ×
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+        <div className="stops-actions">
+          <button
+            type="button"
+            className="preset-btn"
+            disabled={form.stops.length >= MAX_STOPS}
+            onClick={() => setStops(addEmptyStop(form.stops))}
+          >
+            + Add stop
+          </button>
+          {form.stops.some((s) => !isEmptyStop(s) && s.kind === 'point') && (
+            <span className="muted stops-note">Clicked map points can be removed with ×.</span>
+          )}
         </div>
-      )}
+      </div>
 
       <div className="form-grid">
-        <label className="field">
-          <span className="field-label">Origin</span>
-          <input
-            type="text"
-            value={form.origin}
-            placeholder="e.g. Poznań, Poland"
-            disabled={usingMapPoints}
-            onChange={(e) => set({ origin: e.target.value })}
-          />
-        </label>
-
-        <label className="field">
-          <span className="field-label">Destination</span>
-          <input
-            type="text"
-            value={form.destination}
-            placeholder="e.g. Verona, Italy"
-            disabled={usingMapPoints}
-            onChange={(e) => set({ destination: e.target.value })}
-          />
-        </label>
-
-        <label className="field field-wide">
-          <span className="field-label">
-            Via / waypoints <span className="muted">(optional, one per line)</span>
-          </span>
-          <textarea
-            rows={3}
-            value={form.viaText}
-            placeholder={'e.g.\nBardonecchia, Italy\nModane, France'}
-            disabled={usingMapPoints}
-            onChange={(e) => set({ viaText: e.target.value })}
-          />
-        </label>
-
         <label className="field">
           <span className="field-label">
             Avoid countries{' '}
@@ -248,7 +219,7 @@ export function QuoteForm({
           </select>
         </label>
 
-        <div className="field submit-field">
+        <div className="field submit-field field-wide">
           <div className="submit-row">
             <button type="submit" className="submit-btn" disabled={loading}>
               {loading ? 'Calculating…' : 'Calculate quote'}
