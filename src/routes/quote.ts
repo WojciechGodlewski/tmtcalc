@@ -340,7 +340,8 @@ export function createQuoteHandler(hereService: HereService) {
       applyResolvedGeography(
         routeFacts,
         resolvedOrigin.countryCode,
-        resolvedDestination.countryCode
+        resolvedDestination.countryCode,
+        resolvedWaypoints?.map((wp) => wp.countryCode) ?? []
       );
 
       // Best-effort readable locations for restriction segments (capped,

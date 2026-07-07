@@ -708,6 +708,56 @@ describe('Country exclusion (excludeCountries)', () => {
   });
 });
 
+describe('UK round trip via waypoint (regression: waypoint countries)', () => {
+  it('applies the UK surcharge when UK is only a via waypoint (EU -> UK -> EU)', async () => {
+    // Round trip Verona -> London (via) -> Verona with TWO ferry crossings.
+    // Toll data deliberately contains NO GB entries - the UK has no HERE-
+    // reported toll systems, so UK transit is only knowable from the
+    // resolved waypoint country. This used to lose the surcharge entirely.
+    installFetchMock(buildRoutingResponse([
+      buildSection({ lengthMeters: 1550000, durationSeconds: 18 * 3600, tollCountries: ['ITA', 'FRA'] }),
+      buildSection({ lengthMeters: 50000, durationSeconds: 2 * 3600, ferry: true, omitActions: true }),
+      buildSection({ lengthMeters: 100000, durationSeconds: 2 * 3600, omitTolls: true }),
+      buildSection({ lengthMeters: 50000, durationSeconds: 2 * 3600, ferry: true, omitActions: true }),
+      buildSection({ lengthMeters: 1550000, durationSeconds: 18 * 3600, tollCountries: ['FRA', 'ITA'] }),
+    ]));
+    const app = buildTestApp();
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/quote',
+      payload: {
+        origin: { address: 'Verona, Italy' },
+        via: [{ address: 'London, United Kingdom' }],
+        destination: { address: 'Verona, Italy' },
+        vehicleProfileId: 'solo_18t_23ep',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+
+    // Waypoint country reaches the geography
+    expect(body.routeFacts.geography.countriesCrossed).toContain('GB');
+    expect(body.routeFacts.riskFlags.isUK).toBe(true);
+    // Round trip is international even though origin === destination
+    expect(body.routeFacts.geography.isInternational).toBe(true);
+
+    // Both crossings counted; surcharge applied EXACTLY once (not per segment)
+    expect(body.routeFacts.infrastructure.ferrySegments).toBe(2);
+    const ukSurcharges = body.quote.lineItems.surcharges.filter(
+      (x: { type: string }) => x.type === 'ukFerry'
+    );
+    expect(ukSurcharges).toHaveLength(1);
+    expect(ukSurcharges[0].amount).toBe(400);
+
+    // 3300 km * 1.2 + 240 + 400 = 4600 (above ukMin, no adjustment)
+    expect(body.quote.finalPrice).toBe(4600);
+    expect(body.quote.lineItems.minimumAdjustment).toBeNull();
+  });
+});
+
 describe('Truck restriction segments (spans=notices)', () => {
   const RESTRICTION_POINTS = [
     { lat: 45.4384, lng: 10.9916 },

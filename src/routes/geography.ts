@@ -87,16 +87,23 @@ export function isEuCountry(countryCode: string | null): boolean {
 
 /**
  * Enrich RouteFacts geography with resolved (geocoded) origin/destination
- * country codes. Mutates the passed RouteFacts in place:
+ * AND waypoint country codes. Mutates the passed RouteFacts in place:
  * - sets originCountry/destinationCountry as alpha-2
  * - computes isInternational and isEU
- * - normalizes countriesCrossed to alpha-2 and includes origin/destination
+ * - normalizes countriesCrossed to alpha-2 and includes origin, destination
+ *   and all via waypoints
  * - recomputes riskFlags.isUK from the normalized codes
+ *
+ * Waypoint countries are essential: transit countries are otherwise inferred
+ * from HERE toll data, and some countries (notably the UK) have no reported
+ * toll systems - a round trip EU -> UK -> EU would silently lose UK detection
+ * (and its surcharge/minimum) without them.
  */
 export function applyResolvedGeography(
   routeFacts: RouteFacts,
   resolvedOriginCountry: string | null,
-  resolvedDestinationCountry: string | null
+  resolvedDestinationCountry: string | null,
+  resolvedWaypointCountries: Array<string | null> = []
 ): void {
   const originCountry = toAlpha2(resolvedOriginCountry);
   const destinationCountry = toAlpha2(resolvedDestinationCountry);
@@ -104,13 +111,8 @@ export function applyResolvedGeography(
   routeFacts.geography.originCountry = originCountry;
   routeFacts.geography.destinationCountry = destinationCountry;
 
-  if (originCountry && destinationCountry) {
-    routeFacts.geography.isInternational = originCountry !== destinationCountry;
-    // isEU is true only if both endpoints are in EU countries
-    routeFacts.geography.isEU = isEuCountry(originCountry) && isEuCountry(destinationCountry);
-  }
-
-  // Normalize all countriesCrossed (from tolls) to alpha-2, add origin/destination
+  // Normalize all countriesCrossed (from tolls) to alpha-2, add origin,
+  // destination and via waypoints
   const countriesSet = new Set<string>();
   for (const code of routeFacts.geography.countriesCrossed) {
     const alpha2 = toAlpha2(code);
@@ -118,9 +120,22 @@ export function applyResolvedGeography(
   }
   if (originCountry) countriesSet.add(originCountry);
   if (destinationCountry) countriesSet.add(destinationCountry);
+  for (const code of resolvedWaypointCountries) {
+    const alpha2 = toAlpha2(code);
+    if (alpha2) countriesSet.add(alpha2);
+  }
   routeFacts.geography.countriesCrossed = Array.from(countriesSet);
 
-  // Update riskFlags.isUK based on normalized country codes
+  if (originCountry && destinationCountry) {
+    // International when the route touches more than one country - a round
+    // trip FR -> GB -> FR is international even though origin === destination
+    routeFacts.geography.isInternational = routeFacts.geography.countriesCrossed.length > 1;
+    // isEU is true only if both endpoints are in EU countries
+    routeFacts.geography.isEU = isEuCountry(originCountry) && isEuCountry(destinationCountry);
+  }
+
+  // Update riskFlags.isUK based on normalized country codes (origin,
+  // destination, waypoints and toll-derived transit countries)
   routeFacts.riskFlags.isUK =
     isUkCode(destinationCountry) ||
     routeFacts.geography.countriesCrossed.some(isUkCode);
