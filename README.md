@@ -94,9 +94,9 @@ as addresses — the backend geocodes/reverse-geocodes each one, so pricing
 lanes, country exclusions (including the excluded-origin/destination
 checks), restrictions, and admissibility work identically for both input
 kinds. After a quote, clicked rows show their resolved place labels.
-"Clear quote" dismisses the result and removes clicked points while keeping
-typed addresses. Without a map key, typing addresses remains the primary
-path.
+"Clear quote" resets everything route-related: the whole stop list, the
+map, and the calculated result (vehicle profile and country exclusions are
+kept). Without a map key, typing addresses remains the primary path.
 
 **Verifying the map:** run the backend (`npm run dev`, with `HERE_API_KEY`)
 and the frontend (`npm run web:dev`, with `web/.env` set), then click each of
@@ -449,14 +449,14 @@ model and explainable line items:
 ```json
 {
   "quote": {
-    "modelId": "solo-it-eu",
-    "modelName": "SOLO IT -> EU",
+    "modelId": "solo-europe",
+    "modelName": "SOLO Europe -> Europe",
     "distanceKm": 430,
     "lineItems": {
       "kmCharge": 516,
-      "emptiesCharge": 200,
+      "emptiesCharge": 240,
       "surcharges": [],
-      "minimumAdjustment": 484
+      "minimumAdjustment": 444
     },
     "finalPrice": 1200,
     "currency": "EUR"
@@ -464,10 +464,31 @@ model and explainable line items:
 }
 ```
 
+#### Rate card
+
+Two lanes per vehicle: a discounted **PL -> Europe** lane and a
+**Europe -> Europe** catch-all (any European origin, incl. UK and domestic
+routes). EUROPE = EU27 + UK + EFTA (CH/NO/IS/LI) + Western Balkans;
+UA/BY/RU/TR are deliberately excluded for now. Empties are **rated**
+(fixed empty km x the lane's per-km rate). Every lane has a default and a UK
+minimum, applied after surcharges. UK and Alps surcharges are
+direction-agnostic (a crossing costs the same both ways).
+
+| Vehicle | Lane | Rate/km | Empty km | Min | UK min | UK crossing | Alps |
+|---|---|---|---|---|---|---|---|
+| van_8ep | PL -> Europe | 0.65 | 100 | 450 | 900 | +250 | +100 |
+| van_8ep | Europe -> Europe | 0.75 | 100 | 500 | 1000 | +250 | +100 |
+| solo_18t_23ep | PL -> Europe | 1.00 | 200 | 900 | 2400 | +400 | +200 |
+| solo_18t_23ep | Europe -> Europe | 1.20 | 200 | 1200 | 2700 | +400 | +200 |
+| ftl_13_6_33ep | PL -> Europe | 1.30 | 250 | 1500 | 3200 | +500 | +300 |
+| ftl_13_6_33ep | Europe -> Europe | 1.40 | 250 | 1800 | 3500 | +500 | +300 |
+
+Rates live in `src/pricing/market-models.ts` (compile-time config).
+
 #### Golden scenario examples (solo_18t_23ep)
 
 ```bash
-# A. PL -> EU: price = (routeKm + 200 empty km) * 1.0 EUR/km
+# A. PL origin (discounted lane): (routeKm + 200 empty km) * 1.0 EUR/km, min 900
 curl -X POST http://localhost:3000/api/quote \
   -H "Content-Type: application/json" \
   -d '{
@@ -476,7 +497,7 @@ curl -X POST http://localhost:3000/api/quote \
     "vehicleProfileId": "solo_18t_23ep"
   }'
 
-# B. IT -> EU: price = routeKm * 1.2 + 200 flat empties, minimum 1200 EUR
+# B. European origin (catch-all lane): routeKm * 1.2 + 240 rated empties, min 1200
 curl -X POST http://localhost:3000/api/quote \
   -H "Content-Type: application/json" \
   -d '{
@@ -485,7 +506,7 @@ curl -X POST http://localhost:3000/api/quote \
     "vehicleProfileId": "solo_18t_23ep"
   }'
 
-# C. IT -> UK: + 400 EUR UK crossing, minimum 2700 EUR
+# C. UK-bound: + 400 EUR UK crossing, ukMin 2700 EUR (direction-agnostic)
 curl -X POST http://localhost:3000/api/quote \
   -H "Content-Type: application/json" \
   -d '{
@@ -545,9 +566,10 @@ Notes:
 - The Alps tunnel surcharge covers Fréjus and Mont Blanc only; other alpine
   tunnels (Brenner, Gotthard, …) are reported in `infrastructure.tunnels` but
   do not trigger a surcharge.
-- The `EU` pricing lane group intentionally includes UK destinations (UK
-  specifics are priced via `ukFerry` surcharges and `ukMin` minimums); more
-  specific UK lanes take precedence.
+- The rate card covers the `EUROPE` group (EU27 + UK + EFTA + Western
+  Balkans); routes with an origin or destination outside it (e.g. UA, TR)
+  return `pricing_unavailable`. UK specifics are priced via the `ukFerry`
+  surcharge and `ukMin` minimums, in both directions.
 - Unit tests do not perform live HERE calls; HERE responses are mocked at the
   HTTP layer (see `src/routes/golden-quotes.test.ts`).
 - The frontend HERE Maps key (`VITE_HERE_MAPS_API_KEY`) is browser-visible by

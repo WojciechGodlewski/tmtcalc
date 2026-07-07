@@ -6,8 +6,11 @@ import type { VehicleProfileId } from '../here/vehicle-profiles.js';
 
 /**
  * Country groups for lane matching
+ * EUROPE is the broad coverage group used by the rate card: EU27 + UK + EFTA
+ * (CH/NO/IS) + Western Balkans. UA/BY/RU/TR are deliberately excluded for now
+ * (permits/sanctions) - adding them is a conscious business decision.
  */
-export type CountryGroup = 'PL' | 'IT' | 'DE' | 'FR' | 'EU' | 'UK' | 'SCANDI' | 'BALTIC' | 'ANY';
+export type CountryGroup = 'PL' | 'IT' | 'DE' | 'FR' | 'EU' | 'EUROPE' | 'UK' | 'SCANDI' | 'BALTIC' | 'ANY';
 
 /**
  * Lane definition for origin/destination matching
@@ -211,6 +214,25 @@ export function getCountryGroup(countryCode: string | null): CountryGroup | null
 const UK_CODES = new Set(['GB', 'GBR', 'UK']);
 
 /**
+ * EUROPE coverage group: EU members + UK + EFTA (CH/NO/IS, incl. LI) +
+ * Western Balkans. Both alpha-2 and alpha-3 codes are listed.
+ * Deliberately NOT included: UA, BY, RU, TR (see CountryGroup docs).
+ */
+export const EUROPE_COUNTRIES = new Set([
+  ...EU_COUNTRIES,
+  'GB', 'GBR', 'UK', // United Kingdom
+  'CH', 'CHE', // Switzerland
+  'NO', 'NOR', // Norway
+  'IS', 'ISL', // Iceland
+  'LI', 'LIE', // Liechtenstein
+  'RS', 'SRB', // Serbia
+  'BA', 'BIH', // Bosnia and Herzegovina
+  'MK', 'MKD', // North Macedonia
+  'AL', 'ALB', // Albania
+  'ME', 'MNE', // Montenegro
+]);
+
+/**
  * Check if a country matches a group
  *
  * Note: the 'EU' lane group means "European coverage" for pricing purposes and
@@ -230,6 +252,9 @@ export function countryMatchesGroup(countryCode: string | null, group: CountryGr
 
   // EU group includes all EU countries plus UK (see note above)
   if (group === 'EU' && (EU_COUNTRIES.has(normalized) || UK_CODES.has(normalized))) return true;
+
+  // EUROPE is the broad rate-card coverage group (EU + UK + EFTA + Balkans)
+  if (group === 'EUROPE' && EUROPE_COUNTRIES.has(normalized)) return true;
 
   return false;
 }

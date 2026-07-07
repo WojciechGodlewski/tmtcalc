@@ -7,9 +7,9 @@
  * geography normalization -> pricing.
  *
  * Golden cases:
- *   A. PL -> IT   (Poznań -> Verona)                    -> solo-pl-eu
- *   B. IT -> DE   (Verona -> Munich)                    -> solo-it-eu + minimum
- *   C. IT -> UK   (Verona -> London)                    -> solo-it-uk + UK surcharge + minimum
+ *   A. PL -> IT   (Poznań -> Verona)                    -> solo-pl-europe
+ *   B. IT -> DE   (Verona -> Munich)                    -> solo-europe + minimum
+ *   C. IT -> UK   (Verona -> London)                    -> solo-europe + UK surcharge + ukMin
  *   D. IT -> FR   (Turin -> via Bardonecchia/Modane -> Chambéry) -> Fréjus detection
  *   E. Robustness (missing optional HERE fields, upstream errors)
  */
@@ -195,7 +195,7 @@ beforeEach(() => {
 });
 
 describe('Golden case A: PL -> IT (Poznań -> Verona, solo_18t_23ep)', () => {
-  it('prices with solo-pl-eu: finalPrice = distanceKm + 200', async () => {
+  it('prices with solo-pl-europe: finalPrice = distanceKm + 200', async () => {
     installFetchMock(buildRoutingResponse([
       buildSection({ lengthMeters: 1100000, durationSeconds: 14 * 3600, tollCountries: ['POL', 'CZE', 'AUT', 'ITA'] }),
     ]));
@@ -220,7 +220,7 @@ describe('Golden case A: PL -> IT (Poznań -> Verona, solo_18t_23ep)', () => {
     expect(body.error).toBeUndefined();
 
     // Model and geography
-    expect(body.quote.modelId).toBe('solo-pl-eu');
+    expect(body.quote.modelId).toBe('solo-pl-europe');
     expect(body.routeFacts.geography.originCountry).toBe('PL');
     expect(body.routeFacts.geography.destinationCountry).toBe('IT');
     expect(body.routeFacts.geography.isInternational).toBe(true);
@@ -246,7 +246,7 @@ describe('Golden case A: PL -> IT (Poznań -> Verona, solo_18t_23ep)', () => {
 });
 
 describe('Golden case B: IT -> DE (Verona -> Munich, solo_18t_23ep)', () => {
-  it('prices with solo-it-eu: kmCharge = km * 1.2, empties 200, min 1200', async () => {
+  it('prices with solo-europe: kmCharge = km * 1.2, rated empties 240, min 1200', async () => {
     installFetchMock(buildRoutingResponse([
       buildSection({ lengthMeters: 430000, durationSeconds: 6 * 3600, tollCountries: ['ITA', 'AUT', 'DEU'] }),
     ]));
@@ -267,22 +267,22 @@ describe('Golden case B: IT -> DE (Verona -> Munich, solo_18t_23ep)', () => {
     expect(response.statusCode).toBe(200);
     const body = response.json();
 
-    expect(body.quote.modelId).toBe('solo-it-eu');
+    expect(body.quote.modelId).toBe('solo-europe');
     expect(body.routeFacts.geography.originCountry).toBe('IT');
     expect(body.routeFacts.geography.destinationCountry).toBe('DE');
 
-    // kmCharge = 430 * 1.2 = 516, empties = 200 flat
+    // kmCharge = 430 * 1.2 = 516, empties rated: 200 km * 1.2 = 240
     expect(body.quote.lineItems.kmCharge).toBeCloseTo(516, 2);
-    expect(body.quote.lineItems.emptiesCharge).toBe(200);
+    expect(body.quote.lineItems.emptiesCharge).toBe(240);
 
-    // Subtotal 716 < defaultMin 1200 -> minimum applied
-    expect(body.quote.lineItems.minimumAdjustment).toBeCloseTo(484, 2);
+    // Subtotal 756 < defaultMin 1200 -> minimum applied
+    expect(body.quote.lineItems.minimumAdjustment).toBeCloseTo(444, 2);
     expect(body.quote.finalPrice).toBe(1200);
   });
 });
 
 describe('Golden case C: IT -> UK (Verona -> London, solo_18t_23ep)', () => {
-  it('prices with solo-it-uk: UK detection, +400 surcharge, min 2700', async () => {
+  it('prices with solo-europe ukMin: UK detection, +400 surcharge, min 2700', async () => {
     installFetchMock(buildRoutingResponse([
       buildSection({ lengthMeters: 1550000, durationSeconds: 18 * 3600, tollCountries: ['ITA', 'FRA'] }),
       // Channel crossing
@@ -312,17 +312,17 @@ describe('Golden case C: IT -> UK (Verona -> London, solo_18t_23ep)', () => {
     expect(body.routeFacts.infrastructure.hasFerry).toBe(true);
 
     // Model and surcharge
-    expect(body.quote.modelId).toBe('solo-it-uk');
+    expect(body.quote.modelId).toBe('solo-europe');
     const ukSurcharge = body.quote.lineItems.surcharges.find(
       (s: { type: string }) => s.type === 'ukFerry'
     );
     expect(ukSurcharge).toBeDefined();
     expect(ukSurcharge.amount).toBe(400);
 
-    // 1600 * 1.2 + 200 + 400 = 2520 < 2700 -> minimum applied
+    // 1600 * 1.2 + 240 rated empties + 400 = 2560 < ukMin 2700 -> minimum applied
     expect(body.quote.lineItems.kmCharge).toBeCloseTo(1920, 2);
-    expect(body.quote.lineItems.emptiesCharge).toBe(200);
-    expect(body.quote.lineItems.minimumAdjustment).toBeCloseTo(180, 2);
+    expect(body.quote.lineItems.emptiesCharge).toBe(240);
+    expect(body.quote.lineItems.minimumAdjustment).toBeCloseTo(140, 2);
     expect(body.quote.finalPrice).toBe(2700);
   });
 });
@@ -587,7 +587,7 @@ describe('Country exclusion (excludeCountries)', () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
-    expect(body.quote.modelId).toBe('solo-it-eu');
+    expect(body.quote.modelId).toBe('solo-europe');
     expect(body.debug.hereRequest.excludeCountries).toEqual(['CHE']);
 
     const url = new URL(routingUrls[0]);
@@ -754,7 +754,7 @@ describe('Truck restriction segments (spans=notices)', () => {
     const body = response.json();
 
     // Quote still calculated - restriction is a warning, not a failure
-    expect(body.quote.modelId).toBe('solo-it-eu');
+    expect(body.quote.modelId).toBe('solo-europe');
 
     const reg = body.routeFacts.regulatory;
     expect(reg.truckRestricted).toBe(true);
@@ -996,9 +996,10 @@ describe('Golden case E: robustness', () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
-    expect(body.quote.modelId).toBe('solo-pl-eu');
-    // (500 + 200) * 1.0 = 700
-    expect(body.quote.finalPrice).toBe(700);
+    expect(body.quote.modelId).toBe('solo-pl-europe');
+    // (500 + 200) * 1.0 = 700 -> below the new 900 minimum -> 900
+    expect(body.quote.lineItems.minimumAdjustment).toBe(200);
+    expect(body.quote.finalPrice).toBe(900);
     // Geography still comes from geocoding, not tolls
     expect(body.routeFacts.geography.originCountry).toBe('PL');
     expect(body.routeFacts.geography.destinationCountry).toBe('DE');
@@ -1026,7 +1027,8 @@ describe('Golden case E: robustness', () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
-    expect(body.quote.finalPrice).toBe(700);
+    // (500 + 200) * 1.0 = 700 -> below the 900 minimum -> 900
+    expect(body.quote.finalPrice).toBe(900);
     expect(body.routeFacts.infrastructure.tollCountries).toEqual(['DEU']);
   });
 

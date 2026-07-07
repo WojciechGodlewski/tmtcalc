@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
 # Live smoke test for the four golden HERE scenarios (solo_18t_23ep):
-#   1. Poznań  -> Verona                                  (solo-pl-eu)
-#   2. Verona  -> Munich                                  (solo-it-eu + minimum)
-#   3. Verona  -> London                                  (solo-it-uk + UK surcharge + minimum)
+#   1. Poznań  -> Verona                                  (solo-pl-europe)
+#   2. Verona  -> Munich                                  (solo-europe + minimum)
+#   3. Verona  -> London                                  (solo-europe + UK surcharge + ukMin)
 #   4. Turin   -> Bardonecchia -> Modane -> Chambéry      (Fréjus detection + Alps surcharge)
 #
 # Requirements:
@@ -115,7 +115,7 @@ assert() {
 }
 
 # ---------------------------------------------------------------------------
-# Scenario 1: Poznań -> Verona (solo-pl-eu)
+# Scenario 1: Poznań -> Verona (solo-pl-europe)
 # ---------------------------------------------------------------------------
 log ""
 log "=== 1. Poznań -> Verona (solo_18t_23ep) ==="
@@ -131,7 +131,7 @@ if quote "$R1" '{
     // reports truck restrictions here, this fails visibly so the change can
     // be investigated instead of silently accepted (see README).
     check(b.admissibility && b.admissibility.quoteValid === true, 'admissibility.quoteValid = true (status: ' + (b.admissibility && b.admissibility.status) + ')', JSON.stringify(b.admissibility));
-    check(q.modelId === 'solo-pl-eu', 'modelId = solo-pl-eu', q.modelId);
+    check(q.modelId === 'solo-pl-europe', 'modelId = solo-pl-europe', q.modelId);
     check(g.originCountry === 'PL', 'originCountry = PL', g.originCountry);
     check(g.destinationCountry === 'IT', 'destinationCountry = IT', g.destinationCountry);
     const km = b.routeFacts.route.distanceKm;
@@ -141,7 +141,7 @@ if quote "$R1" '{
 fi
 
 # ---------------------------------------------------------------------------
-# Scenario 2: Verona -> Munich (solo-it-eu, minimum 1200)
+# Scenario 2: Verona -> Munich (solo-europe, minimum 1200)
 # ---------------------------------------------------------------------------
 log ""
 log "=== 2. Verona -> Munich (solo_18t_23ep) ==="
@@ -154,12 +154,12 @@ if quote "$R2" '{
   assert "$R2" "
     const q = b.quote, g = b.routeFacts.geography, li = q.lineItems;
     check(b.admissibility && b.admissibility.quoteValid === true, 'admissibility.quoteValid = true (status: ' + (b.admissibility && b.admissibility.status) + ')', JSON.stringify(b.admissibility));
-    check(q.modelId === 'solo-it-eu', 'modelId = solo-it-eu', q.modelId);
+    check(q.modelId === 'solo-europe', 'modelId = solo-europe', q.modelId);
     check(g.originCountry === 'IT', 'originCountry = IT', g.originCountry);
     check(g.destinationCountry === 'DE', 'destinationCountry = DE', g.destinationCountry);
     const km = b.routeFacts.route.distanceKm;
     check(approx(li.kmCharge, km * 1.2), 'kmCharge = distanceKm * 1.2', li.kmCharge + ' vs ' + km * 1.2);
-    check(li.emptiesCharge === 200, 'emptiesCharge = 200', li.emptiesCharge);
+    check(li.emptiesCharge === 240, 'emptiesCharge = 240 (200 rated empty km * 1.2)', li.emptiesCharge);
     const surchargeTotal = li.surcharges.reduce((s, x) => s + x.amount, 0);
     const subtotal = li.kmCharge + li.emptiesCharge + surchargeTotal;
     if (subtotal < 1200) {
@@ -173,7 +173,7 @@ if quote "$R2" '{
 fi
 
 # ---------------------------------------------------------------------------
-# Scenario 3: Verona -> London (solo-it-uk, UK surcharge, minimum 2700)
+# Scenario 3: Verona -> London (solo-europe, UK surcharge, ukMin 2700)
 # ---------------------------------------------------------------------------
 log ""
 log "=== 3. Verona -> London (solo_18t_23ep) ==="
@@ -186,7 +186,7 @@ if quote "$R3" '{
   assert "$R3" "
     const q = b.quote, rf = b.routeFacts, li = q.lineItems;
     check(b.admissibility && b.admissibility.quoteValid === true, 'admissibility.quoteValid = true (status: ' + (b.admissibility && b.admissibility.status) + ')', JSON.stringify(b.admissibility));
-    check(q.modelId === 'solo-it-uk', 'modelId = solo-it-uk', q.modelId);
+    check(q.modelId === 'solo-europe', 'modelId = solo-europe (ukMin lane)', q.modelId);
     check(rf.geography.destinationCountry === 'GB', 'destinationCountry = GB', rf.geography.destinationCountry);
     check(rf.riskFlags.isUK === true, 'riskFlags.isUK = true', rf.riskFlags.isUK);
     check(rf.infrastructure.hasFerry === true, 'infrastructure.hasFerry = true', rf.infrastructure.hasFerry);
@@ -221,7 +221,7 @@ if quote "$R4" '{
   assert "$R4" "
     const q = b.quote, rf = b.routeFacts, li = q.lineItems, d = b.debug.hereResponse;
     check(b.admissibility && b.admissibility.quoteValid === true, 'admissibility.quoteValid = true (status: ' + (b.admissibility && b.admissibility.status) + ')', JSON.stringify(b.admissibility));
-    check(q.modelId === 'solo-it-eu', 'modelId = solo-it-eu', q.modelId);
+    check(q.modelId === 'solo-europe', 'modelId = solo-europe', q.modelId);
     check(b.debug.hereRequest.viaCount === 2, 'viaCount = 2', b.debug.hereRequest.viaCount);
     check(rf.riskFlags.crossesAlps === true, 'riskFlags.crossesAlps = true', rf.riskFlags.crossesAlps);
     check(rf.infrastructure.hasTunnel === true, 'infrastructure.hasTunnel = true', rf.infrastructure.hasTunnel);

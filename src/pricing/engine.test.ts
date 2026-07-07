@@ -4,7 +4,7 @@ import {
   calculatePrice,
   calculateQuote,
 } from './engine.js';
-import { SOLO_MODELS } from './market-models.js';
+import { SOLO_MODELS, VAN_MODELS, FTL_MODELS } from './market-models.js';
 import { createRouteFacts, type RouteFacts } from '../types/route-facts.js';
 
 /**
@@ -27,9 +27,9 @@ function createTestRouteFacts(overrides: {
       sections: 1,
     },
     geography: {
-      originCountry: overrides.originCountry ?? 'POL',
-      destinationCountry: overrides.destinationCountry ?? 'DEU',
-      countriesCrossed: overrides.countriesCrossed ?? ['POL', 'DEU'],
+      originCountry: overrides.originCountry ?? 'PL',
+      destinationCountry: overrides.destinationCountry ?? 'DE',
+      countriesCrossed: overrides.countriesCrossed ?? ['PL', 'DE'],
       isInternational: true,
       isEU: true,
     },
@@ -52,714 +52,258 @@ function createTestRouteFacts(overrides: {
   });
 }
 
-describe('Pricing Engine', () => {
-  describe('findMatchingModel', () => {
-    it('finds SOLO PL -> EU model for Poland to Germany route', () => {
-      const routeFacts = createTestRouteFacts({
-        originCountry: 'POL',
-        destinationCountry: 'DEU',
-      });
-
-      const model = findMatchingModel('solo_18t_23ep', routeFacts);
-
-      expect(model).not.toBeNull();
-      expect(model?.id).toBe('solo-pl-eu');
+describe('Pricing Engine (agreed rate card)', () => {
+  describe('findMatchingModel: two lanes per vehicle', () => {
+    it('PL origin gets the discounted PL lane', () => {
+      const model = findMatchingModel('solo_18t_23ep', createTestRouteFacts({
+        originCountry: 'PL', destinationCountry: 'DE',
+      }));
+      expect(model?.id).toBe('solo-pl-europe');
     });
 
-    it('finds SOLO IT -> EU model for Italy to Germany route', () => {
-      const routeFacts = createTestRouteFacts({
-        originCountry: 'ITA',
-        destinationCountry: 'DEU',
-      });
-
-      const model = findMatchingModel('solo_18t_23ep', routeFacts);
-
-      expect(model).not.toBeNull();
-      expect(model?.id).toBe('solo-it-eu');
+    it('non-PL European origins get the catch-all lane (IT, DE, ES, CH)', () => {
+      for (const origin of ['IT', 'DE', 'ES', 'CH']) {
+        const model = findMatchingModel('solo_18t_23ep', createTestRouteFacts({
+          originCountry: origin, destinationCountry: 'FR',
+        }));
+        expect(model?.id).toBe('solo-europe');
+      }
     });
 
-    it('returns null for unsupported lane', () => {
-      const routeFacts = createTestRouteFacts({
-        originCountry: 'ESP', // Spain - not in our models
-        destinationCountry: 'PRT', // Portugal
-      });
+    it('UK is an allowed origin at the catch-all rate', () => {
+      const model = findMatchingModel('solo_18t_23ep', createTestRouteFacts({
+        originCountry: 'GB', destinationCountry: 'DE',
+      }));
+      expect(model?.id).toBe('solo-europe');
+    });
 
-      const model = findMatchingModel('solo_18t_23ep', routeFacts);
+    it('previously uncovered lanes now price (ES -> PT, FR -> FR domestic)', () => {
+      expect(findMatchingModel('solo_18t_23ep', createTestRouteFacts({
+        originCountry: 'ES', destinationCountry: 'PT',
+      }))?.id).toBe('solo-europe');
+      expect(findMatchingModel('solo_18t_23ep', createTestRouteFacts({
+        originCountry: 'FR', destinationCountry: 'FR',
+      }))?.id).toBe('solo-europe');
+    });
 
-      expect(model).toBeNull();
+    it('accepts alpha-3 codes too', () => {
+      expect(findMatchingModel('solo_18t_23ep', createTestRouteFacts({
+        originCountry: 'POL', destinationCountry: 'DEU',
+      }))?.id).toBe('solo-pl-europe');
+      expect(findMatchingModel('solo_18t_23ep', createTestRouteFacts({
+        originCountry: 'ITA', destinationCountry: 'GBR',
+      }))?.id).toBe('solo-europe');
+    });
+
+    it('returns null outside the EUROPE group (UA/TR excluded by design)', () => {
+      expect(findMatchingModel('solo_18t_23ep', createTestRouteFacts({
+        originCountry: 'UA', destinationCountry: 'PL',
+      }))).toBeNull();
+      expect(findMatchingModel('solo_18t_23ep', createTestRouteFacts({
+        originCountry: 'PL', destinationCountry: 'TR',
+      }))).toBeNull();
+    });
+
+    it('selects van and FTL lanes analogously', () => {
+      expect(findMatchingModel('van_8ep', createTestRouteFacts({ originCountry: 'PL' }))?.id).toBe('van-pl-europe');
+      expect(findMatchingModel('van_8ep', createTestRouteFacts({ originCountry: 'NL' }))?.id).toBe('van-europe');
+      expect(findMatchingModel('ftl_13_6_33ep', createTestRouteFacts({ originCountry: 'PL' }))?.id).toBe('ftl-pl-europe');
+      expect(findMatchingModel('ftl_13_6_33ep', createTestRouteFacts({ originCountry: 'RO' }))?.id).toBe('ftl-europe');
     });
 
     it('returns null for unknown vehicle profile', () => {
-      const routeFacts = createTestRouteFacts({
-        originCountry: 'POL',
-        destinationCountry: 'DEU',
-      });
-
-      const model = findMatchingModel('unknown_profile' as any, routeFacts);
-
-      expect(model).toBeNull();
+      expect(findMatchingModel('unknown_profile' as never, createTestRouteFacts({}))).toBeNull();
     });
   });
 
-  describe('SOLO PL -> EU pricing', () => {
-    const model = SOLO_MODELS.find((m) => m.id === 'solo-pl-eu')!;
+  describe('SOLO PL -> Europe (1.0/km, 200 rated empty km, min 900, ukMin 2400)', () => {
+    const model = SOLO_MODELS.find((m) => m.id === 'solo-pl-europe')!;
 
-    it('calculates basic price: (routeKm + 200) * 1.0', () => {
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 500,
-        originCountry: 'POL',
-        destinationCountry: 'DEU',
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      // (500 + 200) * 1.0 = 700
-      expect(result.lineItems.kmCharge).toBe(500);
-      expect(result.lineItems.emptiesCharge).toBe(200);
-      expect(result.finalPrice).toBe(700);
+    it('calculates (routeKm + 200) * 1.0', () => {
+      const result = calculatePrice(model, createTestRouteFacts({ distanceKm: 1100 }));
+      expect(result.lineItems.kmCharge).toBe(1100);
+      expect(result.lineItems.emptiesCharge).toBe(200); // 200 km * 1.0
+      expect(result.finalPrice).toBe(1300);
     });
 
-    it('adds UK surcharge when destination is UK', () => {
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 800,
-        originCountry: 'POL',
-        destinationCountry: 'GBR',
-        isUK: true,
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      // (800 + 200) * 1.0 + 400 = 1400
-      expect(result.lineItems.kmCharge).toBe(800);
-      expect(result.lineItems.emptiesCharge).toBe(200);
-      expect(result.lineItems.surcharges).toHaveLength(1);
-      expect(result.lineItems.surcharges[0].type).toBe('ukFerry');
-      expect(result.lineItems.surcharges[0].amount).toBe(400);
-      expect(result.finalPrice).toBe(1400);
+    it('applies the 900 minimum on short routes', () => {
+      const result = calculatePrice(model, createTestRouteFacts({ distanceKm: 300 }));
+      // 300 + 200 = 500 -> min 900
+      expect(result.lineItems.minimumAdjustment).toBe(400);
+      expect(result.finalPrice).toBe(900);
     });
 
-    it('no minimum is applied (no minimum configured)', () => {
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 100, // Very short route
-        originCountry: 'POL',
-        destinationCountry: 'DEU',
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      // (100 + 200) * 1.0 = 300, no minimum
-      expect(result.finalPrice).toBe(300);
-      expect(result.lineItems.minimumAdjustment).toBeNull();
-    });
-  });
-
-  describe('SOLO IT -> EU pricing', () => {
-    const model = SOLO_MODELS.find((m) => m.id === 'solo-it-eu')!;
-
-    it('calculates basic price: (routeKm * 1.2) + 200', () => {
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 1000, // Use 1000km so price exceeds minimum
-        originCountry: 'ITA',
-        destinationCountry: 'DEU',
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      // 1000 * 1.2 + 200 = 1400 (above 1200 minimum)
-      expect(result.lineItems.kmCharge).toBe(1200);
-      expect(result.lineItems.emptiesCharge).toBe(200);
-      expect(result.lineItems.minimumAdjustment).toBeNull();
-      expect(result.finalPrice).toBe(1400);
+    it('UK destination: +400 surcharge and ukMin 2400', () => {
+      const result = calculatePrice(model, createTestRouteFacts({
+        distanceKm: 1500, destinationCountry: 'GB', countriesCrossed: ['PL', 'DE', 'FR', 'GB'], isUK: true,
+      }));
+      // 1500 + 200 + 400 = 2100 < ukMin 2400
+      expect(result.lineItems.surcharges).toEqual([
+        { type: 'ukFerry', amount: 400, description: 'UK crossing surcharge' },
+      ]);
+      expect(result.lineItems.minimumAdjustment).toBe(300);
+      expect(result.finalPrice).toBe(2400);
     });
 
-    it('applies default minimum 1200 for non-UK routes', () => {
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 300, // Short route
-        originCountry: 'ITA',
-        destinationCountry: 'DEU',
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      // 300 * 1.2 + 200 = 560 < 1200, so minimum applies
-      expect(result.lineItems.kmCharge).toBe(360);
-      expect(result.lineItems.emptiesCharge).toBe(200);
-      expect(result.lineItems.minimumAdjustment).toBe(640); // 1200 - 560
-      expect(result.finalPrice).toBe(1200);
-    });
-
-    it('applies UK minimum 2700 for UK routes', () => {
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 1000,
-        originCountry: 'ITA',
-        destinationCountry: 'GBR',
-        isUK: true,
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      // 1000 * 1.2 + 200 + 400 (UK surcharge) = 1800 < 2700
-      const subtotal = 1200 + 200 + 400;
-      expect(result.lineItems.minimumAdjustment).toBe(2700 - subtotal);
-      expect(result.finalPrice).toBe(2700);
-    });
-
-    it('adds Fréjus tunnel surcharge', () => {
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 800,
-        originCountry: 'ITA',
-        destinationCountry: 'FRA',
-        crossesAlps: true,
-        hasTunnel: true,
-        tunnels: [{ name: 'Fréjus Tunnel', category: 'alpine', country: 'FRA/ITA' }],
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      // 800 * 1.2 + 200 + 200 (tunnel) = 1360
-      expect(result.lineItems.surcharges).toHaveLength(1);
-      expect(result.lineItems.surcharges[0].type).toBe('alpsTunnel');
-      expect(result.lineItems.surcharges[0].amount).toBe(200);
-      expect(result.finalPrice).toBe(1360);
-    });
-
-    it('adds Mont Blanc tunnel surcharge', () => {
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 600,
-        originCountry: 'ITA',
-        destinationCountry: 'FRA',
-        crossesAlps: true,
-        hasTunnel: true,
-        tunnels: [{ name: 'Mont Blanc Tunnel', category: 'alpine', country: 'FRA/ITA' }],
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      expect(result.lineItems.surcharges.some((s) => s.type === 'alpsTunnel')).toBe(true);
-    });
-
-    it('applies both UK and tunnel surcharges', () => {
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 1500,
-        originCountry: 'ITA',
-        destinationCountry: 'GBR',
-        isUK: true,
-        crossesAlps: true,
-        hasTunnel: true,
-        tunnels: [{ name: 'Fréjus Tunnel', category: 'alpine', country: 'FRA/ITA' }],
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      // 1500 * 1.2 + 200 + 400 (UK) + 200 (tunnel) = 2600 < 2700 UK min
-      expect(result.lineItems.surcharges).toHaveLength(2);
-      expect(result.lineItems.surcharges.some((s) => s.type === 'ukFerry')).toBe(true);
-      expect(result.lineItems.surcharges.some((s) => s.type === 'alpsTunnel')).toBe(true);
-      expect(result.finalPrice).toBe(2700); // UK minimum applies
-    });
-
-    it('does not apply minimum when price exceeds it', () => {
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 2000, // Long route
-        originCountry: 'ITA',
-        destinationCountry: 'DEU',
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      // 2000 * 1.2 + 200 = 2600 > 1200
-      expect(result.lineItems.minimumAdjustment).toBeNull();
-      expect(result.finalPrice).toBe(2600);
-    });
-  });
-
-  describe('SOLO IT -> UK pricing', () => {
-    it('selects solo-it-uk model for IT to GB route', () => {
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 1500,
-        originCountry: 'ITA',
-        destinationCountry: 'GB',
-        isUK: true,
-      });
-
-      const model = findMatchingModel('solo_18t_23ep', routeFacts);
-
-      expect(model).not.toBeNull();
-      expect(model?.id).toBe('solo-it-uk');
-      expect(model?.name).toBe('SOLO IT -> UK');
-    });
-
-    it('selects solo-it-uk model for IT to UK (variant) route', () => {
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 1500,
-        originCountry: 'ITA',
-        destinationCountry: 'UK',
-        isUK: true,
-      });
-
-      const model = findMatchingModel('solo_18t_23ep', routeFacts);
-
-      expect(model).not.toBeNull();
-      expect(model?.id).toBe('solo-it-uk');
-    });
-
-    it('calculates price with UK crossing surcharge always applied', () => {
-      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-uk')!;
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 1500,
-        originCountry: 'ITA',
-        destinationCountry: 'GB',
-        isUK: true,
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      // 1500 * 1.2 + 200 + 400 (UK surcharge) = 2400 < 2700 min
-      expect(result.lineItems.kmCharge).toBe(1800);
-      expect(result.lineItems.emptiesCharge).toBe(200);
-      expect(result.lineItems.surcharges).toHaveLength(1);
-      expect(result.lineItems.surcharges[0].type).toBe('ukFerry');
-      expect(result.lineItems.surcharges[0].amount).toBe(400);
-    });
-
-    it('applies minimum 2700 EUR for short routes', () => {
-      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-uk')!;
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 1000,
-        originCountry: 'ITA',
-        destinationCountry: 'GB',
-        isUK: true,
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      // 1000 * 1.2 + 200 + 400 = 1800 < 2700 min
-      const subtotal = 1200 + 200 + 400;
-      expect(result.lineItems.minimumAdjustment).toBe(2700 - subtotal);
-      expect(result.finalPrice).toBe(2700);
-    });
-
-    it('does not apply minimum when price exceeds 2700', () => {
-      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-uk')!;
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 2500, // Long route
-        originCountry: 'ITA',
-        destinationCountry: 'GB',
-        isUK: true,
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      // 2500 * 1.2 + 200 + 400 = 3600 > 2700
+    it('no minimum adjustment when above ukMin', () => {
+      const result = calculatePrice(model, createTestRouteFacts({
+        distanceKm: 3000, destinationCountry: 'GB', isUK: true,
+      }));
+      // 3000 + 200 + 400 = 3600 > 2400
       expect(result.lineItems.minimumAdjustment).toBeNull();
       expect(result.finalPrice).toBe(3600);
     });
+  });
 
-    it('adds Fréjus tunnel surcharge on top of UK surcharge', () => {
-      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-uk')!;
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 2000,
-        originCountry: 'ITA',
-        destinationCountry: 'GB',
-        isUK: true,
-        crossesAlps: true,
-        hasTunnel: true,
-        tunnels: [{ name: 'Fréjus Tunnel', category: 'alpine', country: 'FRA/ITA' }],
-      });
+  describe('SOLO Europe -> Europe (1.2/km, 200 rated empty km = 240, min 1200, ukMin 2700)', () => {
+    const model = SOLO_MODELS.find((m) => m.id === 'solo-europe')!;
 
-      const result = calculatePrice(model, routeFacts);
-
-      // 2000 * 1.2 + 200 + 400 (UK) + 200 (tunnel) = 3200
-      expect(result.lineItems.surcharges).toHaveLength(2);
-      expect(result.lineItems.surcharges.some((s) => s.type === 'ukFerry')).toBe(true);
-      expect(result.lineItems.surcharges.some((s) => s.type === 'alpsTunnel')).toBe(true);
-      expect(result.finalPrice).toBe(3200);
+    it('calculates km * 1.2 with rated empties of 240', () => {
+      const result = calculatePrice(model, createTestRouteFacts({
+        distanceKm: 1000, originCountry: 'IT', destinationCountry: 'DE',
+      }));
+      expect(result.lineItems.kmCharge).toBe(1200);
+      expect(result.lineItems.emptiesCharge).toBe(240); // 200 km * 1.2 - rated, not flat
+      expect(result.finalPrice).toBe(1440);
     });
 
-    it('calculates quote for Verona->London route', () => {
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 1400, // Approximate Verona to London
-        originCountry: 'IT',
-        destinationCountry: 'GB',
-        isUK: true,
-      });
+    it('applies the 1200 minimum (Verona -> Munich case)', () => {
+      const result = calculatePrice(model, createTestRouteFacts({
+        distanceKm: 430, originCountry: 'IT', destinationCountry: 'DE',
+      }));
+      // 516 + 240 = 756 -> min 1200
+      expect(result.lineItems.minimumAdjustment).toBe(444);
+      expect(result.finalPrice).toBe(1200);
+    });
 
-      const result = calculateQuote('solo_18t_23ep', routeFacts);
-
-      expect(result.modelId).toBe('solo-it-uk');
-      expect(result.modelName).toBe('SOLO IT -> UK');
-      // 1400 * 1.2 + 200 + 400 = 2280 < 2700 min
+    it('IT -> UK: +400 and ukMin 2700 (Verona -> London case)', () => {
+      const result = calculatePrice(model, createTestRouteFacts({
+        distanceKm: 1600, originCountry: 'IT', destinationCountry: 'GB', isUK: true,
+      }));
+      // 1920 + 240 + 400 = 2560 -> ukMin 2700
+      expect(result.lineItems.minimumAdjustment).toBeCloseTo(140, 2);
       expect(result.finalPrice).toBe(2700);
-      expect(result.currency).toBe('EUR');
+    });
+
+    it('surcharges are direction-agnostic: UK -> IT gets the same +400 and ukMin', () => {
+      const result = calculatePrice(model, createTestRouteFacts({
+        distanceKm: 1600, originCountry: 'GB', destinationCountry: 'IT',
+        countriesCrossed: ['GB', 'FR', 'IT'], isUK: true,
+      }));
+      expect(result.lineItems.surcharges.some((s) => s.type === 'ukFerry')).toBe(true);
+      expect(result.finalPrice).toBe(2700);
+    });
+
+    it('adds the Alps surcharge when crossesAlps is set (either direction)', () => {
+      const result = calculatePrice(model, createTestRouteFacts({
+        distanceKm: 180, originCountry: 'IT', destinationCountry: 'FR',
+        crossesAlps: true, hasTunnel: true,
+        tunnels: [{ name: 'Fréjus Tunnel', category: 'alpine', country: 'FRA/ITA' }],
+      }));
+      const alps = result.lineItems.surcharges.find((s) => s.type === 'alpsTunnel');
+      expect(alps?.amount).toBe(200);
+      // 216 + 240 + 200 = 656 -> min 1200
+      expect(result.finalPrice).toBe(1200);
+    });
+
+    it('does NOT add the Alps surcharge for other alpine tunnels (e.g. Brenner)', () => {
+      const result = calculatePrice(model, createTestRouteFacts({
+        distanceKm: 800, originCountry: 'IT', destinationCountry: 'AT',
+        crossesAlps: false, hasTunnel: true,
+        tunnels: [{ name: 'Brenner Tunnel', category: 'alpine', country: 'AUT/ITA' }],
+      }));
+      expect(result.lineItems.surcharges.some((s) => s.type === 'alpsTunnel')).toBe(false);
+    });
+
+    it('no minimum when the price exceeds it', () => {
+      const result = calculatePrice(model, createTestRouteFacts({
+        distanceKm: 2000, originCountry: 'IT', destinationCountry: 'ES',
+      }));
+      // 2400 + 240 = 2640 > 1200
+      expect(result.lineItems.minimumAdjustment).toBeNull();
+      expect(result.finalPrice).toBe(2640);
+    });
+  });
+
+  describe('VAN lanes (0.65/0.75 per km, 100 rated empty km)', () => {
+    it('PL lane: rated empties 65, min 450', () => {
+      const model = VAN_MODELS.find((m) => m.id === 'van-pl-europe')!;
+      const result = calculatePrice(model, createTestRouteFacts({ distanceKm: 400 }));
+      expect(result.lineItems.kmCharge).toBe(260);
+      expect(result.lineItems.emptiesCharge).toBe(65); // 100 km * 0.65
+      expect(result.lineItems.minimumAdjustment).toBe(125); // 325 -> 450
+      expect(result.finalPrice).toBe(450);
+    });
+
+    it('catch-all lane: rated empties 75, Alps +100, ukMin 1000', () => {
+      const model = VAN_MODELS.find((m) => m.id === 'van-europe')!;
+      const alps = calculatePrice(model, createTestRouteFacts({
+        distanceKm: 1000, originCountry: 'IT', destinationCountry: 'FR', crossesAlps: true,
+      }));
+      expect(alps.lineItems.emptiesCharge).toBe(75); // 100 km * 0.75
+      expect(alps.lineItems.surcharges.find((s) => s.type === 'alpsTunnel')?.amount).toBe(100);
+      // 750 + 75 + 100 = 925
+      expect(alps.finalPrice).toBe(925);
+
+      const uk = calculatePrice(model, createTestRouteFacts({
+        distanceKm: 300, originCountry: 'FR', destinationCountry: 'GB', isUK: true,
+      }));
+      // 225 + 75 + 250 = 550 -> ukMin 1000
+      expect(uk.finalPrice).toBe(1000);
+    });
+  });
+
+  describe('FTL lanes (1.3/1.4 per km, 250 rated empty km, Alps +300)', () => {
+    it('PL lane: rated empties 325, min 1500', () => {
+      const model = FTL_MODELS.find((m) => m.id === 'ftl-pl-europe')!;
+      const result = calculatePrice(model, createTestRouteFacts({ distanceKm: 700 }));
+      expect(result.lineItems.kmCharge).toBe(910);
+      expect(result.lineItems.emptiesCharge).toBe(325); // 250 km * 1.3
+      expect(result.lineItems.minimumAdjustment).toBe(265); // 1235 -> 1500
+      expect(result.finalPrice).toBe(1500);
+    });
+
+    it('catch-all lane: rated empties 350, UK +500 with ukMin 3500, Alps +300', () => {
+      const model = FTL_MODELS.find((m) => m.id === 'ftl-europe')!;
+      const uk = calculatePrice(model, createTestRouteFacts({
+        distanceKm: 1600, originCountry: 'IT', destinationCountry: 'GB', isUK: true,
+      }));
+      // 2240 + 350 + 500 = 3090 -> ukMin 3500
+      expect(uk.lineItems.minimumAdjustment).toBe(410);
+      expect(uk.finalPrice).toBe(3500);
+
+      const alps = calculatePrice(model, createTestRouteFacts({
+        distanceKm: 2000, originCountry: 'IT', destinationCountry: 'FR', crossesAlps: true,
+      }));
+      expect(alps.lineItems.surcharges.find((s) => s.type === 'alpsTunnel')?.amount).toBe(300);
+      // 2800 + 350 + 300 = 3450 > 1800
+      expect(alps.finalPrice).toBe(3450);
     });
   });
 
   describe('calculateQuote', () => {
-    it('calculates quote for valid route', () => {
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 600,
-        originCountry: 'POL',
-        destinationCountry: 'DEU',
-      });
-
-      const result = calculateQuote('solo_18t_23ep', routeFacts);
-
-      expect(result.modelId).toBe('solo-pl-eu');
-      expect(result.finalPrice).toBe(800); // (600 + 200) * 1.0
+    it('returns a full result with model name for a covered lane', () => {
+      const result = calculateQuote('solo_18t_23ep', createTestRouteFacts({
+        distanceKm: 1100, originCountry: 'PL', destinationCountry: 'IT',
+      }));
+      expect(result.modelId).toBe('solo-pl-europe');
+      expect(result.modelName).toBe('SOLO PL -> Europe');
+      expect(result.finalPrice).toBe(1300);
       expect(result.currency).toBe('EUR');
     });
 
-    it('throws error for unsupported lane', () => {
-      const routeFacts = createTestRouteFacts({
-        originCountry: 'ESP',
-        destinationCountry: 'PRT',
-      });
-
-      expect(() => calculateQuote('solo_18t_23ep', routeFacts)).toThrow(
-        /No pricing model found/
-      );
+    it('throws for lanes outside the EUROPE group', () => {
+      expect(() => calculateQuote('solo_18t_23ep', createTestRouteFacts({
+        originCountry: 'UA', destinationCountry: 'PL',
+      }))).toThrowError(/No pricing model found/);
     });
 
-    it('includes model name in result', () => {
-      const routeFacts = createTestRouteFacts({
-        originCountry: 'ITA',
-        destinationCountry: 'FRA',
-      });
-
-      const result = calculateQuote('solo_18t_23ep', routeFacts);
-
-      expect(result.modelName).toBe('SOLO IT -> EU');
-    });
-
-    it('includes distance in result', () => {
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 750,
-        originCountry: 'POL',
-        destinationCountry: 'DEU',
-      });
-
-      const result = calculateQuote('solo_18t_23ep', routeFacts);
-
-      expect(result.distanceKm).toBe(750);
-    });
-  });
-
-  describe('GB/UK normalization', () => {
-    it('applies UK surcharge when destinationCountry is GB (alpha-2)', () => {
-      const model = SOLO_MODELS.find((m) => m.id === 'solo-pl-eu')!;
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 800,
-        originCountry: 'POL',
-        destinationCountry: 'GB', // alpha-2 for UK
-        isUK: true,
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      expect(result.lineItems.surcharges).toHaveLength(1);
-      expect(result.lineItems.surcharges[0].type).toBe('ukFerry');
-      expect(result.finalPrice).toBe(1400); // (800 + 200) * 1.0 + 400
-    });
-
-    it('applies UK surcharge when destinationCountry is UK (variant)', () => {
-      const model = SOLO_MODELS.find((m) => m.id === 'solo-pl-eu')!;
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 800,
-        originCountry: 'POL',
-        destinationCountry: 'UK', // UK variant (non-ISO but common)
-        isUK: true,
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      expect(result.lineItems.surcharges).toHaveLength(1);
-      expect(result.lineItems.surcharges[0].type).toBe('ukFerry');
-      expect(result.finalPrice).toBe(1400);
-    });
-
-    it('applies UK surcharge when GBR is in countriesCrossed', () => {
-      const model = SOLO_MODELS.find((m) => m.id === 'solo-pl-eu')!;
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 800,
-        originCountry: 'POL',
-        destinationCountry: 'IRL', // Ireland
-        countriesCrossed: ['POL', 'DEU', 'FRA', 'GBR', 'IRL'],
-        isUK: false, // Not set via riskFlags but should detect via countries
-      });
-
-      // isUKRoute checks countries crossed
-      const result = calculatePrice(model, routeFacts);
-
-      expect(result.lineItems.surcharges).toHaveLength(1);
-      expect(result.lineItems.surcharges[0].type).toBe('ukFerry');
-    });
-
-    it('applies UK surcharge when GB is in countriesCrossed', () => {
-      const model = SOLO_MODELS.find((m) => m.id === 'solo-pl-eu')!;
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 800,
-        originCountry: 'POL',
-        destinationCountry: 'IRL',
-        countriesCrossed: ['POL', 'DEU', 'FRA', 'GB', 'IRL'],
-        isUK: false,
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      expect(result.lineItems.surcharges).toHaveLength(1);
-      expect(result.lineItems.surcharges[0].type).toBe('ukFerry');
-    });
-
-    it('applies UK minimum 2700 for IT->GB route', () => {
-      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-eu')!;
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 1000,
-        originCountry: 'ITA',
-        destinationCountry: 'GB', // alpha-2
-        isUK: true,
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      // 1000 * 1.2 + 200 + 400 = 1800 < 2700 UK min
-      expect(result.finalPrice).toBe(2700);
-    });
-
-    it('applies UK minimum 2700 for IT->UK route (variant)', () => {
-      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-eu')!;
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 1000,
-        originCountry: 'ITA',
-        destinationCountry: 'UK', // UK variant
-        isUK: true,
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      expect(result.finalPrice).toBe(2700);
-    });
-
-    it('detects UK via riskFlags.isUK even without UK in destination', () => {
-      const model = SOLO_MODELS.find((m) => m.id === 'solo-pl-eu')!;
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 800,
-        originCountry: 'POL',
-        destinationCountry: 'FRA', // Not UK
-        isUK: true, // But riskFlags says UK route (e.g., transit)
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      expect(result.lineItems.surcharges).toHaveLength(1);
-      expect(result.lineItems.surcharges[0].type).toBe('ukFerry');
-    });
-  });
-
-  describe('Alps tunnel surcharge (crossesAlps flag)', () => {
-    it('applies Alps surcharge when crossesAlps=true and Fréjus tunnel detected', () => {
-      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-eu')!;
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 800,
-        originCountry: 'ITA',
-        destinationCountry: 'FRA',
-        crossesAlps: true,
-        hasTunnel: true,
-        tunnels: [{ name: 'Fréjus Tunnel', category: 'alpine', country: 'FRA/ITA' }],
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      expect(result.lineItems.surcharges).toHaveLength(1);
-      expect(result.lineItems.surcharges[0].type).toBe('alpsTunnel');
-      expect(result.lineItems.surcharges[0].amount).toBe(200);
-    });
-
-    it('applies Alps surcharge when crossesAlps=true and Mont Blanc tunnel detected', () => {
-      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-eu')!;
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 600,
-        originCountry: 'ITA',
-        destinationCountry: 'FRA',
-        crossesAlps: true,
-        hasTunnel: true,
-        tunnels: [{ name: 'Mont Blanc Tunnel', category: 'alpine', country: 'FRA/ITA' }],
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      expect(result.lineItems.surcharges.some((s) => s.type === 'alpsTunnel')).toBe(true);
-    });
-
-    it('does NOT apply Alps surcharge when crossesAlps=false (no alpine tunnel)', () => {
-      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-eu')!;
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 800,
-        originCountry: 'ITA',
-        destinationCountry: 'DEU',
-        crossesAlps: false,
-        hasTunnel: false,
-        tunnels: [],
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      expect(result.lineItems.surcharges.some((s) => s.type === 'alpsTunnel')).toBe(false);
-    });
-
-    it('does NOT apply Alps surcharge for other alpine tunnels (e.g. Brenner)', () => {
-      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-eu')!;
-      // The extractor sets crossesAlps=true ONLY for Fréjus/Mont Blanc detection.
-      // A Brenner route therefore has crossesAlps=false even though it has an
-      // alpine tunnel - and must not get the alpsTunnel surcharge.
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 800,
-        originCountry: 'ITA',
-        destinationCountry: 'AUT',
-        crossesAlps: false,
-        hasTunnel: true,
-        tunnels: [{ name: 'Brenner Tunnel', category: 'alpine', country: 'AUT/ITA' }], // Not Fréjus/Mont Blanc
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      // Alps surcharge should NOT apply - it's specifically for Fréjus/Mont Blanc
-      expect(result.lineItems.surcharges.some((s) => s.type === 'alpsTunnel')).toBe(false);
-    });
-
-    it('applies Alps surcharge when crossesAlps=true (flag is authoritative)', () => {
-      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-eu')!;
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 800,
-        originCountry: 'ITA',
-        destinationCountry: 'FRA',
-        crossesAlps: true,
-        hasTunnel: true,
-        tunnels: [{ name: 'Fréjus Tunnel', category: 'alpine', country: 'FRA/ITA' }],
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      const alps = result.lineItems.surcharges.find((s) => s.type === 'alpsTunnel');
-      expect(alps).toBeDefined();
-      expect(alps!.amount).toBe(200);
-    });
-
-    it('finds solo-pl-eu model for PL -> UK (EU lane covers UK) and applies +400', () => {
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 1500,
-        originCountry: 'PL',
-        destinationCountry: 'GB',
-        countriesCrossed: ['PL', 'DE', 'FR', 'GB'],
-        isUK: true,
-      });
-
-      const model = findMatchingModel('solo_18t_23ep', routeFacts);
-      expect(model).not.toBeNull();
-      expect(model!.id).toBe('solo-pl-eu');
-
-      const result = calculatePrice(model!, routeFacts);
-      // (1500 + 200) * 1.0 + 400 UK surcharge = 2100
-      const uk = result.lineItems.surcharges.find((s) => s.type === 'ukFerry');
-      expect(uk).toBeDefined();
-      expect(uk!.amount).toBe(400);
-      expect(result.finalPrice).toBe(2100);
-    });
-
-    it('still prefers solo-it-uk over solo-it-eu for IT -> UK (model order)', () => {
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 1500,
-        originCountry: 'IT',
-        destinationCountry: 'GB',
-        countriesCrossed: ['IT', 'FR', 'GB'],
-        isUK: true,
-      });
-
-      const model = findMatchingModel('solo_18t_23ep', routeFacts);
-      expect(model).not.toBeNull();
-      expect(model!.id).toBe('solo-it-uk');
-    });
-
-    it('applies Alps surcharge for IT->UK route with Fréjus', () => {
-      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-uk')!;
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 1500,
-        originCountry: 'ITA',
-        destinationCountry: 'GB',
-        isUK: true,
-        crossesAlps: true,
-        hasTunnel: true,
-        tunnels: [{ name: 'Fréjus Tunnel', category: 'alpine', country: 'FRA/ITA' }],
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      // Should have both UK crossing and Alps tunnel surcharges
-      expect(result.lineItems.surcharges).toHaveLength(2);
-      expect(result.lineItems.surcharges.some((s) => s.type === 'ukFerry')).toBe(true);
-      expect(result.lineItems.surcharges.some((s) => s.type === 'alpsTunnel')).toBe(true);
-    });
-
-    it('applies surcharge for Monte Bianco (Italian name for Mont Blanc)', () => {
-      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-eu')!;
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 600,
-        originCountry: 'ITA',
-        destinationCountry: 'FRA',
-        crossesAlps: true,
-        hasTunnel: true,
-        tunnels: [{ name: 'Traforo del Monte Bianco', category: 'alpine', country: 'FRA/ITA' }],
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      expect(result.lineItems.surcharges.some((s) => s.type === 'alpsTunnel')).toBe(true);
-    });
-  });
-
-  describe('edge cases', () => {
-    it('handles zero distance', () => {
-      const model = SOLO_MODELS.find((m) => m.id === 'solo-pl-eu')!;
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 0,
-        originCountry: 'POL',
-        destinationCountry: 'DEU',
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      // (0 + 200) * 1.0 = 200
-      expect(result.lineItems.kmCharge).toBe(0);
-      expect(result.lineItems.emptiesCharge).toBe(200);
-      expect(result.finalPrice).toBe(200);
-    });
-
-    it('handles very long distance', () => {
-      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-eu')!;
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 5000,
-        originCountry: 'ITA',
-        destinationCountry: 'DEU',
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      // 5000 * 1.2 + 200 = 6200
-      expect(result.finalPrice).toBe(6200);
-    });
-
-    it('rounds prices to 2 decimal places', () => {
-      const model = SOLO_MODELS.find((m) => m.id === 'solo-it-eu')!;
-      const routeFacts = createTestRouteFacts({
-        distanceKm: 333, // Will produce non-round numbers
-        originCountry: 'ITA',
-        destinationCountry: 'DEU',
-      });
-
-      const result = calculatePrice(model, routeFacts);
-
-      // 333 * 1.2 = 399.6
-      expect(result.lineItems.kmCharge).toBe(399.6);
-      expect(Number.isInteger(result.finalPrice * 100)).toBe(true);
+    it('weekend/unloadingAfter14 options are accepted but do not change the price (dead by design)', () => {
+      const facts = createTestRouteFacts({ distanceKm: 1000 });
+      const base = calculateQuote('solo_18t_23ep', facts);
+      const withOptions = calculateQuote('solo_18t_23ep', facts, { isWeekend: true, unloadingAfter14: true });
+      expect(withOptions.finalPrice).toBe(base.finalPrice);
+      expect(withOptions.lineItems.surcharges).toEqual(base.lineItems.surcharges);
     });
   });
 });

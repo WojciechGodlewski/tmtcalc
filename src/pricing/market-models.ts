@@ -1,106 +1,91 @@
 /**
- * Market model configurations
- * Config-driven pricing rules for different lanes and vehicles
+ * Market model configurations - the rate card.
+ *
+ * Structure: two lanes per vehicle.
+ *   - PL -> EUROPE: discounted lane (PL carrier cost base)
+ *   - EUROPE -> EUROPE: catch-all for every other European origin,
+ *     including domestic routes and UK origins
+ *
+ * EUROPE = EU27 + UK + EFTA (CH/NO/IS/LI) + Western Balkans
+ * (see EUROPE_COUNTRIES in types.ts; UA/BY/RU/TR deliberately excluded).
+ *
+ * Conventions (agreed rate card):
+ * - Empties are RATED: emptyKmFlat km priced at the lane's per-km rate,
+ *   so repositioning cost scales with the vehicle type.
+ * - Every lane has a defaultMin and a ukMin (UK routes have higher fixed
+ *   costs). The minimum is applied after surcharges.
+ * - Surcharges are direction-agnostic: UK crossing and Alps tunnel apply
+ *   whenever the route touches the UK / Fréjus-Mont Blanc, regardless of
+ *   direction (detection is symmetric by construction).
+ * - Order matters: the more specific PL lane is listed before the catch-all.
  */
 
 import type { MarketModel } from './types.js';
-
-/**
- * Market models for SOLO truck (solo_18t_23ep)
- * Note: Order matters - more specific models should come first
- */
-export const SOLO_MODELS: MarketModel[] = [
-  {
-    id: 'solo-pl-eu',
-    name: 'SOLO PL -> EU',
-    vehicleProfileId: 'solo_18t_23ep',
-    lane: {
-      origin: 'PL',
-      destination: 'EU',
-    },
-    perKmRate: 1.0,
-    emptyKmFlat: 200,
-    surcharges: [
-      {
-        type: 'ukFerry',
-        amount: 400,
-        description: 'UK ferry surcharge',
-      },
-    ],
-  },
-  // IT -> UK must come before IT -> EU (more specific first)
-  {
-    id: 'solo-it-uk',
-    name: 'SOLO IT -> UK',
-    vehicleProfileId: 'solo_18t_23ep',
-    lane: {
-      origin: 'IT',
-      destination: 'UK',
-    },
-    perKmRate: 1.2,
-    emptyFeeFlat: 200,
-    defaultMin: 2700,
-    surcharges: [
-      {
-        type: 'ukFerry',
-        amount: 400,
-        description: 'UK crossing surcharge',
-      },
-      {
-        type: 'alpsTunnel',
-        amount: 200,
-        description: 'Fréjus/Mont Blanc tunnel surcharge',
-      },
-    ],
-  },
-  {
-    id: 'solo-it-eu',
-    name: 'SOLO IT -> EU',
-    vehicleProfileId: 'solo_18t_23ep',
-    lane: {
-      origin: 'IT',
-      destination: 'EU',
-    },
-    perKmRate: 1.2,
-    emptyFeeFlat: 200,
-    defaultMin: 1200,
-    ukMin: 2700,
-    surcharges: [
-      {
-        type: 'ukFerry',
-        amount: 400,
-        description: 'UK ferry surcharge',
-      },
-      {
-        type: 'alpsTunnel',
-        amount: 200,
-        description: 'Fréjus/Mont Blanc tunnel surcharge',
-      },
-    ],
-  },
-];
 
 /**
  * Market models for VAN (van_8ep)
  */
 export const VAN_MODELS: MarketModel[] = [
   {
-    id: 'van-eu-eu',
-    name: 'VAN EU -> EU',
+    id: 'van-pl-europe',
+    name: 'VAN PL -> Europe',
     vehicleProfileId: 'van_8ep',
-    lane: {
-      origin: 'EU',
-      destination: 'EU',
-    },
-    perKmRate: 0.8,
+    lane: { origin: 'PL', destination: 'EUROPE' },
+    perKmRate: 0.65,
+    emptyKmFlat: 100,
+    defaultMin: 450,
+    ukMin: 900,
+    surcharges: [
+      { type: 'ukFerry', amount: 250, description: 'UK crossing surcharge' },
+      { type: 'alpsTunnel', amount: 100, description: 'Fréjus/Mont Blanc tunnel surcharge' },
+    ],
+  },
+  {
+    id: 'van-europe',
+    name: 'VAN Europe -> Europe',
+    vehicleProfileId: 'van_8ep',
+    lane: { origin: 'EUROPE', destination: 'EUROPE' },
+    perKmRate: 0.75,
     emptyKmFlat: 100,
     defaultMin: 500,
+    ukMin: 1000,
     surcharges: [
-      {
-        type: 'ukFerry',
-        amount: 250,
-        description: 'UK ferry surcharge',
-      },
+      { type: 'ukFerry', amount: 250, description: 'UK crossing surcharge' },
+      { type: 'alpsTunnel', amount: 100, description: 'Fréjus/Mont Blanc tunnel surcharge' },
+    ],
+  },
+];
+
+/**
+ * Market models for SOLO truck (solo_18t_23ep)
+ */
+export const SOLO_MODELS: MarketModel[] = [
+  {
+    id: 'solo-pl-europe',
+    name: 'SOLO PL -> Europe',
+    vehicleProfileId: 'solo_18t_23ep',
+    lane: { origin: 'PL', destination: 'EUROPE' },
+    perKmRate: 1.0,
+    emptyKmFlat: 200,
+    defaultMin: 900,
+    ukMin: 2400,
+    surcharges: [
+      { type: 'ukFerry', amount: 400, description: 'UK crossing surcharge' },
+      { type: 'alpsTunnel', amount: 200, description: 'Fréjus/Mont Blanc tunnel surcharge' },
+    ],
+  },
+  {
+    id: 'solo-europe',
+    name: 'SOLO Europe -> Europe',
+    vehicleProfileId: 'solo_18t_23ep',
+    lane: { origin: 'EUROPE', destination: 'EUROPE' },
+    perKmRate: 1.2,
+    emptyKmFlat: 200,
+    defaultMin: 1200,
+    ukMin: 2700,
+    surcharges: [
+      { type: 'ukFerry', amount: 400, description: 'UK crossing surcharge' },
+      { type: 'alpsTunnel', amount: 200, description: 'Fréjus/Mont Blanc tunnel surcharge' },
     ],
   },
 ];
@@ -110,52 +95,31 @@ export const VAN_MODELS: MarketModel[] = [
  */
 export const FTL_MODELS: MarketModel[] = [
   {
-    id: 'ftl-pl-eu',
-    name: 'FTL PL -> EU',
+    id: 'ftl-pl-europe',
+    name: 'FTL PL -> Europe',
     vehicleProfileId: 'ftl_13_6_33ep',
-    lane: {
-      origin: 'PL',
-      destination: 'EU',
-    },
+    lane: { origin: 'PL', destination: 'EUROPE' },
     perKmRate: 1.3,
     emptyKmFlat: 250,
     defaultMin: 1500,
+    ukMin: 3200,
     surcharges: [
-      {
-        type: 'ukFerry',
-        amount: 500,
-        description: 'UK ferry surcharge',
-      },
-      {
-        type: 'frejusOrMontBlanc',
-        amount: 300,
-        description: 'Fréjus/Mont Blanc tunnel surcharge',
-      },
+      { type: 'ukFerry', amount: 500, description: 'UK crossing surcharge' },
+      { type: 'alpsTunnel', amount: 300, description: 'Fréjus/Mont Blanc tunnel surcharge' },
     ],
   },
   {
-    id: 'ftl-it-eu',
-    name: 'FTL IT -> EU',
+    id: 'ftl-europe',
+    name: 'FTL Europe -> Europe',
     vehicleProfileId: 'ftl_13_6_33ep',
-    lane: {
-      origin: 'IT',
-      destination: 'EU',
-    },
+    lane: { origin: 'EUROPE', destination: 'EUROPE' },
     perKmRate: 1.4,
-    emptyFeeFlat: 300,
+    emptyKmFlat: 250,
     defaultMin: 1800,
     ukMin: 3500,
     surcharges: [
-      {
-        type: 'ukFerry',
-        amount: 500,
-        description: 'UK ferry surcharge',
-      },
-      {
-        type: 'frejusOrMontBlanc',
-        amount: 300,
-        description: 'Fréjus/Mont Blanc tunnel surcharge',
-      },
+      { type: 'ukFerry', amount: 500, description: 'UK crossing surcharge' },
+      { type: 'alpsTunnel', amount: 300, description: 'Fréjus/Mont Blanc tunnel surcharge' },
     ],
   },
 ];

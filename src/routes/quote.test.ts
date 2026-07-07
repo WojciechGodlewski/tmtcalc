@@ -183,7 +183,7 @@ describe('POST /api/quote', () => {
 
   describe('successful quotes', () => {
     it('returns quote with pricing breakdown', async () => {
-      // Use PL origin to match the solo-pl-eu model
+      // Use PL origin to match the solo-pl-europe model
       const mockService = createMockHereService({
         tollCountries: ['POL', 'DEU'],
         originCountry: 'POL',
@@ -317,7 +317,7 @@ describe('POST /api/quote', () => {
       expect(response.statusCode).toBe(200);
       const body = response.json();
 
-      expect(body.quote.modelId).toBe('solo-pl-eu');
+      expect(body.quote.modelId).toBe('solo-pl-europe');
       // Verify country codes are in routeFacts (normalized to alpha-2)
       expect(body.routeFacts.geography.originCountry).toBe('PL');
       expect(body.routeFacts.geography.destinationCountry).toBe('DE');
@@ -345,19 +345,20 @@ describe('POST /api/quote', () => {
       expect(response.statusCode).toBe(200);
       const body = response.json();
 
-      expect(body.quote.modelId).toBe('solo-it-eu');
+      expect(body.quote.modelId).toBe('solo-europe');
       // Verify country codes are in routeFacts (normalized to alpha-2)
       expect(body.routeFacts.geography.originCountry).toBe('IT');
       expect(body.routeFacts.geography.destinationCountry).toBe('DE');
     });
 
     it('returns 200 with admissibility pricing_unavailable when no pricing model matches', async () => {
-      // Spain -> Portugal: no model exists for ES -> PT for solo_18t_23ep.
-      // Since the admissibility model, a missing pricing model is NOT an
-      // error - the route stays usable, only the quote is unavailable.
+      // Ukraine -> Portugal: UA is deliberately outside the EUROPE rate-card
+      // group, so no model matches. (ES -> PT is covered since the unified
+      // rate card.) A missing pricing model is NOT an error - the route
+      // stays usable, only the quote is unavailable.
       const mockService = createMockHereService({
-        tollCountries: ['ESP', 'PRT'],
-        originCountry: 'ESP',
+        tollCountries: ['UKR', 'PRT'],
+        originCountry: 'UKR',
         destinationCountry: 'PRT',
       });
       const app = buildApp({ hereService: mockService });
@@ -367,7 +368,7 @@ describe('POST /api/quote', () => {
         method: 'POST',
         url: '/api/quote',
         payload: {
-          origin: { lat: 40.42, lng: -3.70 }, // Madrid
+          origin: { lat: 50.45, lng: 30.52 }, // Kyiv
           destination: { lat: 38.72, lng: -9.14 }, // Lisbon
           vehicleProfileId: 'solo_18t_23ep',
         },
@@ -381,11 +382,11 @@ describe('POST /api/quote', () => {
       expect(body.admissibility.hardConstraintViolation).toBe(false);
       expect(body.admissibility.failedConstraints).toEqual(['pricing_model']);
       expect(body.admissibility.messages[0]).toBe(
-        'No pricing model covers the lane ES → PT for vehicle solo_18t_23ep.'
+        'No pricing model covers the lane UA → PT for vehicle solo_18t_23ep.'
       );
       expect(body.quote).toBeUndefined();
       // Route facts still available (alpha-2 countries)
-      expect(body.routeFacts.geography.originCountry).toBe('ES');
+      expect(body.routeFacts.geography.originCountry).toBe('UA');
       expect(body.routeFacts.geography.destinationCountry).toBe('PT');
     });
   });
