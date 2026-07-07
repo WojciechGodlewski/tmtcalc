@@ -8,6 +8,15 @@ export interface SurchargeLineItem {
   type: string;
   description: string;
   amount: number;
+  /** Times a per-unit surcharge applied (e.g. UK crossings); absent when 1 */
+  count?: number;
+  /** Configured amount for a single unit; absent when count is 1 */
+  unitAmount?: number;
+}
+
+/** A sea/Channel crossing (ferry or Eurotunnel shuttle train) */
+export interface Crossing {
+  type: 'ferry' | 'shuttleTrain';
 }
 
 export interface Quote {
@@ -85,10 +94,14 @@ export interface RouteFacts {
     countriesCrossed: string[];
     isInternational: boolean | null;
     isEU: boolean | null;
+    /** UK entries/exits along the stop sequence (absent on older backends) */
+    ukCrossings?: number;
   };
   infrastructure: {
     hasFerry: boolean;
     ferrySegments: number;
+    /** Typed crossings incl. shuttle trains (absent on older backends) */
+    crossings?: Crossing[];
     hasTollRoads: boolean;
     tollCountries: string[];
     tollCostEstimate: number | null;

@@ -98,6 +98,15 @@ export function isEuCountry(countryCode: string | null): boolean {
  * from HERE toll data, and some countries (notably the UK) have no reported
  * toll systems - a round trip EU -> UK -> EU would silently lose UK detection
  * (and its surcharge/minimum) without them.
+ *
+ * Also computes geography.ukCrossings - the number of UK entries/exits along
+ * the ORDERED stop sequence (origin -> waypoints -> destination). This drives
+ * the per-crossing UK surcharge: IT -> GB is 1 crossing, IT -> GB -> IT is 2.
+ * Stop transitions are more robust than counting ferry/shuttle sections,
+ * which vary with how HERE splits the route. When the route touches the UK
+ * but no stop-level transition is detectable (e.g. GB-only stops, or UK
+ * transit known only from toll data), it falls back to 1 so the surcharge
+ * is never lost.
  */
 export function applyResolvedGeography(
   routeFacts: RouteFacts,
@@ -139,4 +148,23 @@ export function applyResolvedGeography(
   routeFacts.riskFlags.isUK =
     isUkCode(destinationCountry) ||
     routeFacts.geography.countriesCrossed.some(isUkCode);
+
+  // UK entries/exits along the ordered stop sequence. Unknown stop countries
+  // are skipped rather than treated as non-UK, so a failed reverse geocode
+  // cannot fabricate a crossing.
+  const orderedStopCountries = [
+    originCountry,
+    ...resolvedWaypointCountries.map(toAlpha2),
+    destinationCountry,
+  ].filter((code): code is string => code !== null);
+
+  let ukTransitions = 0;
+  for (let i = 1; i < orderedStopCountries.length; i++) {
+    if (isUkCode(orderedStopCountries[i]) !== isUkCode(orderedStopCountries[i - 1])) {
+      ukTransitions++;
+    }
+  }
+
+  routeFacts.geography.ukCrossings =
+    ukTransitions > 0 ? ukTransitions : routeFacts.riskFlags.isUK ? 1 : 0;
 }

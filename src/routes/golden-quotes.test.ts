@@ -50,11 +50,14 @@ interface MockSectionOptions {
   tollCountries?: string[];
   polyline?: string;
   ferry?: boolean;
+  /** Eurotunnel freight shuttle leg (transport mode carShuttleTrain) */
+  shuttleTrain?: boolean;
   omitTolls?: boolean;
   omitActions?: boolean;
 }
 
 function buildSection(opts: MockSectionOptions) {
+  const transportMode = opts.ferry ? 'ferry' : opts.shuttleTrain ? 'carShuttleTrain' : 'truck';
   const section: Record<string, unknown> = {
     id: `section-${Math.abs(opts.lengthMeters)}`,
     type: opts.ferry ? 'ferry' : 'vehicle',
@@ -65,7 +68,7 @@ function buildSection(opts: MockSectionOptions) {
       length: opts.lengthMeters,
       baseDuration: opts.durationSeconds,
     },
-    transport: { mode: opts.ferry ? 'ferry' : 'truck' },
+    transport: { mode: transportMode },
   };
 
   if (!opts.omitActions) {
@@ -310,8 +313,10 @@ describe('Golden case C: IT -> UK (Verona -> London, solo_18t_23ep)', () => {
     expect(body.routeFacts.riskFlags.isUK).toBe(true);
     expect(body.routeFacts.geography.isEU).toBe(false);
     expect(body.routeFacts.infrastructure.hasFerry).toBe(true);
+    expect(body.routeFacts.infrastructure.crossings).toEqual([{ type: 'ferry' }]);
 
-    // Model and surcharge
+    // Model and surcharge: one-way IT -> GB is exactly 1 UK crossing
+    expect(body.routeFacts.geography.ukCrossings).toBe(1);
     expect(body.quote.modelId).toBe('solo-europe');
     const ukSurcharge = body.quote.lineItems.surcharges.find(
       (s: { type: string }) => s.type === 'ukFerry'
@@ -744,17 +749,107 @@ describe('UK round trip via waypoint (regression: waypoint countries)', () => {
     // Round trip is international even though origin === destination
     expect(body.routeFacts.geography.isInternational).toBe(true);
 
-    // Both crossings counted; surcharge applied EXACTLY once (not per segment)
+    // Both ferry sections surface as typed crossings
     expect(body.routeFacts.infrastructure.ferrySegments).toBe(2);
+    expect(body.routeFacts.infrastructure.crossings).toEqual([
+      { type: 'ferry' },
+      { type: 'ferry' },
+    ]);
+
+    // UK surcharge is PER CROSSING: IT -> GB -> IT is 2 UK entries/exits,
+    // derived from the ordered stop countries (not from ferry sections).
+    expect(body.routeFacts.geography.ukCrossings).toBe(2);
+    const ukSurcharges = body.quote.lineItems.surcharges.filter(
+      (x: { type: string }) => x.type === 'ukFerry'
+    );
+    expect(ukSurcharges).toHaveLength(1); // one line item, multiplied
+    expect(ukSurcharges[0].amount).toBe(800);
+    expect(ukSurcharges[0].count).toBe(2);
+    expect(ukSurcharges[0].unitAmount).toBe(400);
+    expect(ukSurcharges[0].description).toContain('× 2 crossings');
+
+    // 3300 km * 1.2 + 240 + 2*400 = 5000 (above ukMin, no adjustment)
+    expect(body.quote.finalPrice).toBe(5000);
+    expect(body.quote.lineItems.minimumAdjustment).toBeNull();
+  });
+
+  it('counts one crossing and one surcharge for a one-way EU -> UK leg', async () => {
+    installFetchMock(buildRoutingResponse([
+      buildSection({ lengthMeters: 1550000, durationSeconds: 18 * 3600, tollCountries: ['ITA', 'FRA'] }),
+      buildSection({ lengthMeters: 50000, durationSeconds: 2 * 3600, ferry: true, omitActions: true }),
+      buildSection({ lengthMeters: 900000, durationSeconds: 10 * 3600, omitTolls: true }),
+    ]));
+    const app = buildTestApp();
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/quote',
+      payload: {
+        origin: { address: 'Verona, Italy' },
+        destination: { address: 'London, United Kingdom' },
+        vehicleProfileId: 'solo_18t_23ep',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+
+    expect(body.routeFacts.geography.ukCrossings).toBe(1);
     const ukSurcharges = body.quote.lineItems.surcharges.filter(
       (x: { type: string }) => x.type === 'ukFerry'
     );
     expect(ukSurcharges).toHaveLength(1);
     expect(ukSurcharges[0].amount).toBe(400);
+    expect(ukSurcharges[0].description).toBe('UK crossing surcharge');
+  });
 
-    // 3300 km * 1.2 + 240 + 400 = 4600 (above ukMin, no adjustment)
-    expect(body.quote.finalPrice).toBe(4600);
-    expect(body.quote.lineItems.minimumAdjustment).toBeNull();
+  it('applies the per-crossing surcharge when the Channel leg is the Eurotunnel shuttle', async () => {
+    // Round trip IT -> GB -> IT where HERE routes outbound via the Eurotunnel
+    // freight shuttle (carShuttleTrain) and back via ferry. This is the case
+    // the UI used to report as "1 ferry segment" on a 2-crossing round trip.
+    installFetchMock(buildRoutingResponse([
+      buildSection({ lengthMeters: 1550000, durationSeconds: 18 * 3600, tollCountries: ['ITA', 'FRA'] }),
+      buildSection({ lengthMeters: 50000, durationSeconds: 35 * 60, shuttleTrain: true, omitActions: true }),
+      buildSection({ lengthMeters: 100000, durationSeconds: 2 * 3600, omitTolls: true }),
+      buildSection({ lengthMeters: 50000, durationSeconds: 2 * 3600, ferry: true, omitActions: true }),
+      buildSection({ lengthMeters: 1550000, durationSeconds: 18 * 3600, tollCountries: ['FRA', 'ITA'] }),
+    ]));
+    const app = buildTestApp();
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/quote',
+      payload: {
+        origin: { address: 'Verona, Italy' },
+        via: [{ address: 'London, United Kingdom' }],
+        destination: { address: 'Verona, Italy' },
+        vehicleProfileId: 'solo_18t_23ep',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+
+    // Crossings labeled by type; the shuttle leg is NOT a ferry segment
+    expect(body.routeFacts.infrastructure.crossings).toEqual([
+      { type: 'shuttleTrain' },
+      { type: 'ferry' },
+    ]);
+    expect(body.routeFacts.infrastructure.ferrySegments).toBe(1);
+    expect(body.routeFacts.riskFlags.isIsland).toBe(false); // destination is IT
+
+    // Surcharge keyed on stop-country transitions, not on section types
+    expect(body.routeFacts.geography.ukCrossings).toBe(2);
+    const ukSurcharges = body.quote.lineItems.surcharges.filter(
+      (x: { type: string }) => x.type === 'ukFerry'
+    );
+    expect(ukSurcharges).toHaveLength(1);
+    expect(ukSurcharges[0].amount).toBe(800);
+
+    // 3300 km * 1.2 + 240 + 800 = 5000
+    expect(body.quote.finalPrice).toBe(5000);
   });
 });
 

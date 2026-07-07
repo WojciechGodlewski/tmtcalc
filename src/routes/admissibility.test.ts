@@ -16,6 +16,7 @@ function makeFacts(overrides: {
       countriesCrossed: ['IT', 'AT', 'DE'],
       isInternational: true,
       isEU: true,
+      ukCrossings: 0,
     },
     regulatory: {
       truckRestricted: overrides.truckRestricted ?? false,

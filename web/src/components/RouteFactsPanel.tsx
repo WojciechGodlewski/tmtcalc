@@ -1,4 +1,4 @@
-import type { RestrictionSegment, RouteFacts } from '../types';
+import type { Crossing, RestrictionSegment, RouteFacts } from '../types';
 
 function formatCoord(p: { lat: number; lng: number } | null): string {
   if (!p) return 'n/a';
@@ -52,6 +52,19 @@ function RestrictionSegmentItem({ segment }: { segment: RestrictionSegment }) {
   );
 }
 
+/**
+ * "1 ferry", "2 ferries", "1 ferry, 1 shuttle train" - per-type breakdown
+ * of the sea/Channel crossings, in a fixed ferry-first order.
+ */
+function crossingBreakdown(crossings: Crossing[]): string {
+  const ferries = crossings.filter((c) => c.type === 'ferry').length;
+  const shuttles = crossings.filter((c) => c.type === 'shuttleTrain').length;
+  const parts: string[] = [];
+  if (ferries > 0) parts.push(`${ferries} ${ferries === 1 ? 'ferry' : 'ferries'}`);
+  if (shuttles > 0) parts.push(`${shuttles} shuttle train${shuttles === 1 ? '' : 's'}`);
+  return parts.join(', ');
+}
+
 function YesNo({ value }: { value: boolean | null }) {
   if (value === null) return <span className="muted">unknown</span>;
   return value ? <span className="flag-yes">yes</span> : <span className="flag-no">no</span>;
@@ -66,6 +79,12 @@ export function RouteFactsPanel({ routeFacts }: RouteFactsPanelProps) {
   const tunnelNames = infrastructure.tunnels
     .map((t) => t.name)
     .filter((name): name is string => Boolean(name));
+
+  // Typed crossings (ferry + Eurotunnel shuttle). Older backends only send
+  // ferrySegments - synthesize ferry-typed entries so the row still renders.
+  const crossings: Crossing[] =
+    infrastructure.crossings ??
+    Array.from({ length: infrastructure.ferrySegments }, () => ({ type: 'ferry' as const }));
 
   return (
     <div className="card">
@@ -84,11 +103,16 @@ export function RouteFactsPanel({ routeFacts }: RouteFactsPanelProps) {
           <dd><YesNo value={riskFlags.isUK} /></dd>
         </div>
         <div>
-          <dt>Ferry</dt>
+          <dt>Sea/Channel crossings</dt>
           <dd>
-            <YesNo value={infrastructure.hasFerry} />
-            {infrastructure.hasFerry && infrastructure.ferrySegments > 0 && (
-              <span className="muted"> ({infrastructure.ferrySegments} segment{infrastructure.ferrySegments > 1 ? 's' : ''})</span>
+            <YesNo value={crossings.length > 0} />
+            {crossings.length > 0 && (
+              <span className="muted">
+                {' '}
+                ({crossings.length === 1
+                  ? crossingBreakdown(crossings)
+                  : `${crossings.length} crossings: ${crossingBreakdown(crossings)}`})
+              </span>
             )}
           </dd>
         </div>

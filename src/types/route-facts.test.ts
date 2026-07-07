@@ -22,10 +22,12 @@ describe('RouteFacts Schema', () => {
       countriesCrossed: ['DE', 'PL'],
       isInternational: true,
       isEU: true,
+      ukCrossings: 0,
     },
     infrastructure: {
       hasFerry: false,
       ferrySegments: 0,
+      crossings: [],
       hasTollRoads: true,
       tollCountries: ['DE', 'PL'],
       tollCostEstimate: 45.0,
@@ -59,6 +61,22 @@ describe('RouteFacts Schema', () => {
       expect(result.success).toBe(true);
     });
 
+    it('defaults crossings/ukCrossings when absent (older payloads)', () => {
+      const { ukCrossings: _uk, ...geographyWithout } = validRouteFacts.geography;
+      const { crossings: _cr, ...infrastructureWithout } = validRouteFacts.infrastructure;
+      const legacy = {
+        ...validRouteFacts,
+        geography: geographyWithout,
+        infrastructure: infrastructureWithout,
+      };
+      const result = RouteFactsSchema.safeParse(legacy);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.geography.ukCrossings).toBe(0);
+        expect(result.data.infrastructure.crossings).toEqual([]);
+      }
+    });
+
     it('accepts nullable fields as null', () => {
       const withNulls: RouteFacts = {
         ...validRouteFacts,
@@ -73,6 +91,7 @@ describe('RouteFacts Schema', () => {
           countriesCrossed: [],
           isInternational: null,
           isEU: null,
+          ukCrossings: 0,
         },
       };
       const result = RouteFactsSchema.safeParse(withNulls);
@@ -198,6 +217,7 @@ describe('RouteFacts Schema', () => {
           countriesCrossed: ['FR', 'IT'],
           isInternational: true,
           isEU: true,
+          ukCrossings: 0,
         },
       });
       expect(facts.geography.originCountry).toBe('FR');
@@ -234,6 +254,7 @@ describe('RouteFacts Schema', () => {
           countriesCrossed: ['DE', 'FR'],
           isInternational: true,
           isEU: true,
+          ukCrossings: 0,
         },
       });
       const updated = mergeRouteFacts(base, {
@@ -249,6 +270,7 @@ describe('RouteFacts Schema', () => {
         infrastructure: {
           hasFerry: false,
           ferrySegments: 0,
+          crossings: [],
           hasTollRoads: true,
           tollCountries: ['DE'],
           tollCostEstimate: null,
@@ -294,8 +316,13 @@ describe('RouteFacts Schema', () => {
       expect(DEFAULT_ROUTE_FACTS.riskFlags.isBaltic).toBe(false);
     });
 
+    it('has zero UK crossings', () => {
+      expect(DEFAULT_ROUTE_FACTS.geography.ukCrossings).toBe(0);
+    });
+
     it('has all arrays empty', () => {
       expect(DEFAULT_ROUTE_FACTS.geography.countriesCrossed).toEqual([]);
+      expect(DEFAULT_ROUTE_FACTS.infrastructure.crossings).toEqual([]);
       expect(DEFAULT_ROUTE_FACTS.infrastructure.tollCountries).toEqual([]);
       expect(DEFAULT_ROUTE_FACTS.infrastructure.tunnels).toEqual([]);
       expect(DEFAULT_ROUTE_FACTS.regulatory.restrictionReasons).toEqual([]);

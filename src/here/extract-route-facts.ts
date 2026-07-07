@@ -3,6 +3,7 @@
  */
 
 import {
+  type Crossing,
   type RouteFacts,
   type Tunnel,
   type Warning,
@@ -213,10 +214,15 @@ function isFerryAction(action: HereRouteAction): boolean {
 }
 
 /**
- * Check if a section is a ferry section
+ * Classify a section as a sea/Channel crossing.
+ * HERE reports ferries as transport mode 'ferry' and the Eurotunnel freight
+ * shuttle (trucks carried on trains) as 'carShuttleTrain'.
  */
-function isFerrySection(section: HereRouteSection): boolean {
-  return section.transport?.mode === 'ferry' || section.type === 'ferry';
+function crossingTypeForSection(section: HereRouteSection): Crossing['type'] | null {
+  const mode = section.transport?.mode;
+  if (mode === 'ferry' || section.type === 'ferry') return 'ferry';
+  if (mode === 'carShuttleTrain' || section.type === 'carShuttleTrain') return 'shuttleTrain';
+  return null;
 }
 
 /**
@@ -275,30 +281,41 @@ function extractTolls(sections: HereRouteSection[]): {
 }
 
 /**
- * Extract ferry information from sections and actions
+ * Extract sea/Channel crossings from sections, in section order.
+ *
+ * Real crossing sections (transport mode ferry / carShuttleTrain) are
+ * authoritative. Only when the response carries NO crossing section at all
+ * does the ferry-mentioning action text serve as a fallback, counting at
+ * most one crossing per section - approach actions like "Arrive at the
+ * ferry terminal" must not inflate the count.
  */
-function extractFerryInfo(sections: HereRouteSection[]): {
+function extractCrossings(sections: HereRouteSection[]): {
+  crossings: Crossing[];
   hasFerry: boolean;
   ferrySegments: number;
 } {
-  let ferrySegments = 0;
+  const crossings: Crossing[] = [];
 
   for (const section of sections) {
-    // Check section type
-    if (isFerrySection(section)) {
-      ferrySegments++;
-      continue;
+    const type = crossingTypeForSection(section);
+    if (type) {
+      crossings.push({ type });
     }
+  }
 
-    // Check actions within section
-    for (const action of asArray<HereRouteAction>(section.actions)) {
-      if (isFerryAction(action)) {
-        ferrySegments++;
+  if (crossings.length === 0) {
+    for (const section of sections) {
+      const actions = asArray<HereRouteAction>(section.actions);
+      if (actions.some(isFerryAction)) {
+        crossings.push({ type: 'ferry' });
       }
     }
   }
 
+  const ferrySegments = crossings.filter((c) => c.type === 'ferry').length;
+
   return {
+    crossings,
     hasFerry: ferrySegments > 0,
     ferrySegments,
   };
@@ -563,7 +580,7 @@ function extractRestrictions(sections: HereRouteSection[]): {
 function computeRiskFlags(
   countriesCrossed: string[],
   destinationCountry: string | null,
-  hasFerry: boolean,
+  hasCrossing: boolean,
   hasAlpsSurchargeTunnel: boolean
 ): {
   isUK: boolean;
@@ -591,9 +608,10 @@ function computeRiskFlags(
   // Other tunnels (even alpine ones) do NOT trigger the surcharge
   const crossesAlps = hasAlpsSurchargeTunnel;
 
-  // Island detection: ferry + destination is island country
+  // Island detection: sea/Channel crossing (ferry OR Eurotunnel shuttle)
+  // + destination is an island country
   const destIsIsland = destinationCountry ? isIslandCountry(destinationCountry) : false;
-  const isIsland = hasFerry && destIsIsland;
+  const isIsland = hasCrossing && destIsIsland;
 
   return {
     isUK: hasUK,
@@ -723,7 +741,7 @@ export function extractRouteFactsFromHere(
 
   // Extract infrastructure info
   const tollInfo = extractTolls(sections);
-  const ferryInfo = extractFerryInfo(sections);
+  const crossingInfo = extractCrossings(sections);
   const tunnelInfo = extractTunnels(sections, alpsMatch);
 
   // Extract regulatory info
@@ -749,7 +767,7 @@ export function extractRouteFactsFromHere(
   const riskFlags = computeRiskFlags(
     countriesCrossed,
     destinationCountry,
-    ferryInfo.hasFerry,
+    crossingInfo.crossings.length > 0,
     tunnelInfo.hasAlpsSurchargeTunnel
   );
 
@@ -765,10 +783,13 @@ export function extractRouteFactsFromHere(
       countriesCrossed,
       isInternational,
       isEU: null, // Cannot determine from HERE response alone
+      // Set by applyResolvedGeography from the ordered stop countries
+      ukCrossings: 0,
     },
     infrastructure: {
-      hasFerry: ferryInfo.hasFerry,
-      ferrySegments: ferryInfo.ferrySegments,
+      hasFerry: crossingInfo.hasFerry,
+      ferrySegments: crossingInfo.ferrySegments,
+      crossings: crossingInfo.crossings,
       hasTollRoads: tollInfo.hasTollRoads,
       tollCountries: tollInfo.tollCountries,
       tollCostEstimate: tollInfo.tollCostEstimate,

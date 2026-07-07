@@ -386,11 +386,13 @@ curl -X POST http://localhost:3000/api/route-facts \
       "destinationCountry": "PL",
       "countriesCrossed": ["DE", "PL"],
       "isInternational": true,
-      "isEU": true
+      "isEU": true,
+      "ukCrossings": 0
     },
     "infrastructure": {
       "hasFerry": false,
       "ferrySegments": 0,
+      "crossings": [],
       "hasTollRoads": true,
       "tollCountries": ["DEU", "POL"],
       "tollCostEstimate": 45.50,
@@ -437,6 +439,15 @@ curl -X POST http://localhost:3000/api/route-facts \
 
 Note: `geography` country codes are always ISO 3166-1 **alpha-2** (`PL`, `IT`, `DE`, `GB`). `UK` and alpha-3 codes from HERE (`POL`, `GBR`, …) are normalized automatically.
 
+`infrastructure.crossings` lists every sea/Channel crossing in route order,
+labeled by type: `{ "type": "ferry" }` or `{ "type": "shuttleTrain" }`
+(Eurotunnel Le Shuttle freight — trucks carried on shuttle trains, reported
+by HERE as transport mode `carShuttleTrain`). `hasFerry`/`ferrySegments`
+count only true ferries and are kept for backward compatibility.
+`geography.ukCrossings` is the number of UK entries/exits along the ordered
+stop sequence (origin → waypoints → destination): a one-way EU → UK route is
+1, a round trip EU → UK → EU is 2. It drives the per-crossing UK surcharge.
+
 ### POST /api/quote
 
 Calculate a market-based price for a route. Accepts the same payload as
@@ -473,6 +484,13 @@ UA/BY/RU/TR are deliberately excluded for now. Empties are **rated**
 (fixed empty km x the lane's per-km rate). Every lane has a default and a UK
 minimum, applied after surcharges. UK and Alps surcharges are
 direction-agnostic (a crossing costs the same both ways).
+
+The UK crossing surcharge is charged **per crossing** — one UK entry/exit
+(ferry or Eurotunnel shuttle alike, detected from the ordered stop
+countries, not from ferry sections). A one-way EU → UK route pays it once;
+a round trip EU → UK → EU pays it twice. The surcharge line item then
+carries `count` and `unitAmount` (e.g. `"UK crossing surcharge × 2
+crossings"`, amount 800).
 
 | Vehicle | Lane | Rate/km | Empty km | Min | UK min | UK crossing | Alps |
 |---|---|---|---|---|---|---|---|

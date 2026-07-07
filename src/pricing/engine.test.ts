@@ -16,6 +16,7 @@ function createTestRouteFacts(overrides: {
   destinationCountry?: string | null;
   countriesCrossed?: string[];
   isUK?: boolean;
+  ukCrossings?: number;
   crossesAlps?: boolean;
   hasTunnel?: boolean;
   tunnels?: Array<{ name: string | null; category: string | null; country: string | null }>;
@@ -32,10 +33,12 @@ function createTestRouteFacts(overrides: {
       countriesCrossed: overrides.countriesCrossed ?? ['PL', 'DE'],
       isInternational: true,
       isEU: true,
+      ukCrossings: overrides.ukCrossings ?? (overrides.isUK ? 1 : 0),
     },
     infrastructure: {
       hasFerry: false,
       ferrySegments: 0,
+      crossings: [],
       hasTollRoads: true,
       tollCountries: ['DEU'],
       tollCostEstimate: null,
@@ -192,6 +195,38 @@ describe('Pricing Engine (agreed rate card)', () => {
       }));
       expect(result.lineItems.surcharges.some((s) => s.type === 'ukFerry')).toBe(true);
       expect(result.finalPrice).toBe(2700);
+    });
+
+    it('UK surcharge is per crossing: round trip (ukCrossings 2) pays 2 x 400', () => {
+      const result = calculatePrice(model, createTestRouteFacts({
+        distanceKm: 3300, originCountry: 'IT', destinationCountry: 'IT',
+        countriesCrossed: ['IT', 'FR', 'GB'], isUK: true, ukCrossings: 2,
+      }));
+      expect(result.lineItems.surcharges).toEqual([
+        {
+          type: 'ukFerry',
+          amount: 800,
+          count: 2,
+          unitAmount: 400,
+          description: 'UK crossing surcharge × 2 crossings',
+        },
+      ]);
+      // 3960 + 240 + 800 = 5000
+      expect(result.finalPrice).toBe(5000);
+    });
+
+    it('falls back to a single UK surcharge when isUK is set but ukCrossings is 0', () => {
+      // UK transit detected without stop-level transitions (e.g. toll-derived
+      // only, or a legacy RouteFacts payload) - never lose the surcharge
+      const result = calculatePrice(model, createTestRouteFacts({
+        distanceKm: 3000, originCountry: 'IT', destinationCountry: 'GB',
+        isUK: true, ukCrossings: 0,
+      }));
+      const uk = result.lineItems.surcharges.filter((s) => s.type === 'ukFerry');
+      expect(uk).toHaveLength(1);
+      expect(uk[0].amount).toBe(400);
+      expect(uk[0].description).toBe('UK crossing surcharge');
+      expect(uk[0].count).toBeUndefined();
     });
 
     it('adds the Alps surcharge when crossesAlps is set (either direction)', () => {

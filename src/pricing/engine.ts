@@ -142,10 +142,17 @@ export function calculatePrice(
   if (model.surcharges) {
     for (const surchargeConfig of model.surcharges) {
       let applies = false;
+      // Per-unit surcharges multiply the configured amount by this count
+      let count = 1;
 
       switch (surchargeConfig.type) {
         case 'ukFerry':
+          // Charged PER UK CROSSING: a round trip EU -> UK -> EU pays twice.
+          // ukCrossings comes from the ordered stop-country sequence (see
+          // applyResolvedGeography); the max(1, ...) guard keeps the legacy
+          // single surcharge for UK routes detected without stop transitions.
           applies = isUK;
+          count = Math.max(1, routeFacts.geography.ukCrossings ?? 0);
           break;
         case 'frejusOrMontBlanc':
           applies = hasFrejusMontBlanc;
@@ -169,8 +176,14 @@ export function calculatePrice(
       if (applies) {
         surcharges.push({
           type: surchargeConfig.type,
-          description: surchargeConfig.description,
-          amount: surchargeConfig.amount,
+          description:
+            count > 1
+              ? `${surchargeConfig.description} × ${count} crossings`
+              : surchargeConfig.description,
+          amount: surchargeConfig.amount * count,
+          ...(count > 1
+            ? { count, unitAmount: surchargeConfig.amount }
+            : {}),
         });
       }
     }

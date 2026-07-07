@@ -17,6 +17,9 @@
  * - Surcharges are direction-agnostic: UK crossing and Alps tunnel apply
  *   whenever the route touches the UK / Fréjus-Mont Blanc, regardless of
  *   direction (detection is symmetric by construction).
+ * - The UK crossing surcharge is PER CROSSING: the configured amount is one
+ *   UK entry/exit (ferry or Eurotunnel shuttle alike), so a round trip
+ *   EU -> UK -> EU pays it twice (see geography.ukCrossings).
  * - Order matters: the more specific PL lane is listed before the catch-all.
  */
 

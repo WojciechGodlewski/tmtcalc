@@ -18,6 +18,14 @@ export const WarningSchema = z.object({
 });
 
 /**
+ * A sea/Channel crossing along the route. HERE reports these as sections with
+ * transport mode 'ferry' or 'carShuttleTrain' (Eurotunnel Le Shuttle Freight).
+ */
+export const CrossingSchema = z.object({
+  type: z.enum(['ferry', 'shuttleTrain']),
+});
+
+/**
  * Route distance and duration information
  */
 export const RouteSchema = z.object({
@@ -35,6 +43,14 @@ export const GeographySchema = z.object({
   countriesCrossed: z.array(z.string()),
   isInternational: z.boolean().nullable(),
   isEU: z.boolean().nullable(),
+  /**
+   * Number of UK entries/exits along the ordered stop sequence
+   * (origin -> waypoints -> destination). Drives the per-crossing UK
+   * surcharge: a round trip EU -> UK -> EU counts 2. Defaults to 0;
+   * falls back to 1 when the route touches the UK but no stop-level
+   * transition is detectable (see applyResolvedGeography).
+   */
+  ukCrossings: z.number().int().nonnegative().default(0),
 });
 
 /**
@@ -43,6 +59,12 @@ export const GeographySchema = z.object({
 export const InfrastructureSchema = z.object({
   hasFerry: z.boolean(),
   ferrySegments: z.number().int().nonnegative(),
+  /**
+   * All sea/Channel crossings in section order, labeled by type. Supersedes
+   * hasFerry/ferrySegments (kept for backward compatibility): a Eurotunnel
+   * shuttle-train leg appears here but is NOT a ferry segment.
+   */
+  crossings: z.array(CrossingSchema).default([]),
   hasTollRoads: z.boolean(),
   tollCountries: z.array(z.string()),
   tollCostEstimate: z.number().nonnegative().nullable(),
@@ -152,6 +174,7 @@ export const RouteFactsSchema = z.object({
 export type RestrictionDisplay = z.infer<typeof RestrictionDisplaySchema>;
 export type SegmentLocation = z.infer<typeof SegmentLocationSchema>;
 export type RestrictionSegment = z.infer<typeof RestrictionSegmentSchema>;
+export type Crossing = z.infer<typeof CrossingSchema>;
 export type Tunnel = z.infer<typeof TunnelSchema>;
 export type Warning = z.infer<typeof WarningSchema>;
 export type Route = z.infer<typeof RouteSchema>;
@@ -187,10 +210,12 @@ export const DEFAULT_ROUTE_FACTS: RouteFacts = {
     countriesCrossed: [],
     isInternational: null,
     isEU: null,
+    ukCrossings: 0,
   },
   infrastructure: {
     hasFerry: false,
     ferrySegments: 0,
+    crossings: [],
     hasTollRoads: false,
     tollCountries: [],
     tollCostEstimate: null,
@@ -261,6 +286,7 @@ export function mergeRouteFacts(base: RouteFacts, updates: PartialRouteFacts): R
     infrastructure: {
       ...base.infrastructure,
       ...updates.infrastructure,
+      crossings: updates.infrastructure?.crossings ?? base.infrastructure.crossings,
       tollCountries: updates.infrastructure?.tollCountries ?? base.infrastructure.tollCountries,
       tunnels: updates.infrastructure?.tunnels ?? base.infrastructure.tunnels,
     },

@@ -65,11 +65,18 @@ export interface MarketModel {
 
 /**
  * Surcharge line item in pricing result
+ * `amount` is always the total. For per-unit surcharges (currently ukFerry,
+ * charged per UK crossing) `count` and `unitAmount` explain the math:
+ * amount = unitAmount * count.
  */
 export interface SurchargeLineItem {
   type: SurchargeType;
   description: string;
   amount: number;
+  /** How many times the unit surcharge applied (per-unit surcharges only) */
+  count?: number;
+  /** Configured amount for a single unit (per-unit surcharges only) */
+  unitAmount?: number;
 }
 
 /**

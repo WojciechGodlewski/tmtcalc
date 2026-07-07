@@ -1351,4 +1351,97 @@ describe('extractRouteFactsFromHere', () => {
       expect(result.riskFlags.crossesAlps).toBe(false);
     });
   });
+
+  describe('crossings (ferry + Eurotunnel shuttle train)', () => {
+    function minimalSection(opts: {
+      mode: string;
+      type?: string;
+      actions?: HereRouteAction[];
+    }): HereRouteSection {
+      return {
+        id: `section-${opts.mode}`,
+        type: opts.type ?? 'vehicle',
+        departure: { time: '2024-01-15T08:00:00Z', place: { type: 'place', location: { lat: 51.0, lng: 1.0 } } },
+        arrival: { time: '2024-01-15T10:00:00Z', place: { type: 'place', location: { lat: 51.1, lng: 1.2 } } },
+        summary: { duration: 3600, length: 50000, baseDuration: 3600 },
+        transport: { mode: opts.mode },
+        ...(opts.actions ? { actions: opts.actions } : {}),
+      } as HereRouteSection;
+    }
+
+    function response(sections: HereRouteSection[]): HereRoutingResponse {
+      return { routes: [{ id: 'route-crossings', sections }] };
+    }
+
+    it('labels ferry sections as ferry crossings', () => {
+      const result = extractRouteFactsFromHere(response([
+        minimalSection({ mode: 'truck' }),
+        minimalSection({ mode: 'ferry', type: 'ferry' }),
+      ]));
+
+      expect(result.infrastructure.crossings).toEqual([{ type: 'ferry' }]);
+      expect(result.infrastructure.hasFerry).toBe(true);
+      expect(result.infrastructure.ferrySegments).toBe(1);
+    });
+
+    it('labels carShuttleTrain sections as shuttleTrain crossings, not ferries', () => {
+      const result = extractRouteFactsFromHere(response([
+        minimalSection({ mode: 'truck' }),
+        minimalSection({ mode: 'carShuttleTrain' }),
+      ]));
+
+      expect(result.infrastructure.crossings).toEqual([{ type: 'shuttleTrain' }]);
+      expect(result.infrastructure.hasFerry).toBe(false);
+      expect(result.infrastructure.ferrySegments).toBe(0);
+    });
+
+    it('keeps section order for mixed crossings (shuttle out, ferry back)', () => {
+      const result = extractRouteFactsFromHere(response([
+        minimalSection({ mode: 'truck' }),
+        minimalSection({ mode: 'carShuttleTrain' }),
+        minimalSection({ mode: 'truck' }),
+        minimalSection({ mode: 'ferry', type: 'ferry' }),
+        minimalSection({ mode: 'truck' }),
+      ]));
+
+      expect(result.infrastructure.crossings).toEqual([
+        { type: 'shuttleTrain' },
+        { type: 'ferry' },
+      ]);
+      expect(result.infrastructure.ferrySegments).toBe(1);
+    });
+
+    it('ignores ferry-mentioning actions when real crossing sections exist (no over-count)', () => {
+      // The approach road announces the ferry ("Arrive at the ferry
+      // terminal") - this used to be counted as a second segment
+      const result = extractRouteFactsFromHere(response([
+        minimalSection({
+          mode: 'truck',
+          actions: [
+            { action: 'continue', duration: 600, length: 10000, instruction: 'Arrive at the ferry terminal', offset: 0 },
+          ],
+        }),
+        minimalSection({ mode: 'ferry', type: 'ferry' }),
+      ]));
+
+      expect(result.infrastructure.crossings).toEqual([{ type: 'ferry' }]);
+      expect(result.infrastructure.ferrySegments).toBe(1);
+    });
+
+    it('falls back to action text only when no crossing section exists, max one per section', () => {
+      const result = extractRouteFactsFromHere(response([
+        minimalSection({
+          mode: 'truck',
+          actions: [
+            { action: 'continue', duration: 600, length: 10000, instruction: 'Board ferry to Calais', offset: 0 },
+            { action: 'continue', duration: 600, length: 10000, instruction: 'Leave the ferry', offset: 1 },
+          ],
+        }),
+        minimalSection({ mode: 'truck' }),
+      ]));
+
+      expect(result.infrastructure.crossings).toEqual([{ type: 'ferry' }]);
+      expect(result.infrastructure.ferrySegments).toBe(1);
+    });
+  });
 });
