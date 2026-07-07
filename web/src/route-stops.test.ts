@@ -6,7 +6,6 @@ import {
   updateAddressStop,
   addEmptyStop,
   removeStop,
-  clearPointStops,
   stopRole,
   filledStops,
   derivePayloadLocations,
@@ -111,11 +110,6 @@ describe('unified route stops', () => {
   it('updateAddressStop converts a point row back to an address row', () => {
     const stops = updateAddressStop([P(1, 1), A('')], 0, 'Verona, Italy');
     expect(stops[0]).toEqual(A('Verona, Italy'));
-  });
-
-  it('clearPointStops keeps typed addresses and pads to two rows', () => {
-    expect(clearPointStops([A('Poznań'), P(1, 1), A('Verona'), P(2, 2)])).toEqual([A('Poznań'), A('Verona')]);
-    expect(clearPointStops([P(1, 1), P(2, 2)])).toEqual([A(''), A('')]);
   });
 
   it('planningMarkers returns only point stops with their roles', () => {

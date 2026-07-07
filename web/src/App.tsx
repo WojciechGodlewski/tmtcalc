@@ -4,7 +4,6 @@ import type { QuoteRequest, QuoteResponse } from './types';
 import {
   addPointStop,
   canAcceptPoint,
-  clearPointStops,
   derivePayloadLocations,
   emptyStops,
   filledStops,
@@ -103,16 +102,18 @@ export function App() {
     }
   }
 
-  // Full reset of the current quote: dismisses the result/error and clears
-  // the map (clicked points and drawn route) while keeping typed addresses.
+  // "Clear quote" resets everything route-related: the whole stop list
+  // (typed addresses AND clicked points), the map, and the calculated
+  // result/error. Vehicle profile and country exclusions are settings and
+  // stay as they are.
   function handleClearQuote() {
-    setForm((current) => ({ ...current, stops: clearPointStops(current.stops) }));
+    setForm((current) => ({ ...current, stops: emptyStops() }));
     setResult(null);
     setError(null);
     setValidationMessage(null);
   }
 
-  const hasPointStops = form.stops.some((s) => s.kind === 'point');
+  const hasFilledStops = filledStops(form.stops).length > 0;
 
   // Labels for stop rows, available after a quote from resolvedPoints
   // (origin, vias, destination in filled order)
@@ -151,7 +152,7 @@ export function App() {
         onChange={setForm}
         onSubmit={handleSubmit}
         onClearQuote={handleClearQuote}
-        canClearQuote={result !== null || error !== null || hasPointStops}
+        canClearQuote={result !== null || error !== null || hasFilledStops}
       />
 
       {validationMessage && (

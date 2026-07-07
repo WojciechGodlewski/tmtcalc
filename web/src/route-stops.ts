@@ -94,13 +94,6 @@ export function removeStop(stops: Stop[], index: number): Stop[] {
   return next;
 }
 
-/** Drop clicked points but keep typed addresses (used by "Clear quote") */
-export function clearPointStops(stops: Stop[]): Stop[] {
-  const next: Stop[] = stops.filter((s) => s.kind === 'address');
-  while (next.length < MIN_STOPS) next.push(emptyAddressStop());
-  return next;
-}
-
 /**
  * Role badge for a row: 'A' for the first filled stop, 'B' for the last
  * filled stop, via numbers between, '·' for empty rows.
